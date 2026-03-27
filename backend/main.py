@@ -12,7 +12,7 @@ from datetime import datetime
 from simple_limit_up import SimpleLimitUpAnalyzer
 from ai_service import AI_SERVICE, AI_CONFIG
 
-app = FastAPI(title="股票助手API", version="1.0.0")
+app = FastAPI(title="MyStock API", version="1.0.0")
 
 # CORS配置
 app.add_middleware(
@@ -116,7 +116,7 @@ def get_stock_data(ticker: str, code: str) -> Optional[dict]:
 # API 路由
 @app.get("/")
 async def root():
-    return {"message": "股票助手 API", "version": "1.0.0"}
+    return {"message": "MyStock API", "version": "1.0.0"}
 
 # 获取所有数据
 @app.get("/api/data", response_model=PortfolioResponse)

@@ -33,7 +33,7 @@ class AIConfig:
         return bool(self.api_key)
 
     def get_system_prompt(self) -> str:
-        return """你是专业的股票助手，专注于帮助用户管理持仓、分析股票。
+        return """你是 MyStock 的专业股票助手，专注于帮助用户管理持仓、分析股票。
 
 能力：
 1. 查询股票实时价格和涨跌情况

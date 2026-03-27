@@ -1,5 +1,5 @@
 #!/bin/bash
-# AI 股票助手启动脚本
+# MyStock 我的股票 启动脚本
 
 # 加载 .env 文件（如果存在）
 if [ -f .env ]; then
@@ -17,5 +17,5 @@ echo "=========================================="
 echo ""
 
 # 启动服务
-echo "启动股票助手后端服务..."
+echo "启动 MyStock 后端服务..."
 python main.py

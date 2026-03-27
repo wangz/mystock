@@ -206,7 +206,7 @@ class AIService:
 
         # 基础问答
         if any(kw in message_lower for kw in ['你好', 'hi', 'hello']):
-            return "你好！我是股票助手，可以帮你查询持仓、分析股票。有什么可以帮你的吗？"
+            return "你好！我是 MyStock，可以帮你查询持仓、分析股票。有什么可以帮你的吗？"
 
         if any(kw in message_lower for kw in ['帮助', 'help', '怎么用']):
             return """我可以帮你：

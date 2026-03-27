@@ -7,7 +7,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${GREEN}  股票助手 FastAPI + Vue 应用启动器${NC}"
+echo -e "${GREEN}  MyStock - 我的股票 FastAPI + Vue 应用启动器${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
