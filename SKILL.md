@@ -35,33 +35,43 @@ Invoke this skill when the user:
 ## Architecture
 
 ```
-my-stock/
+./
 ├── backend/           # FastAPI backend server
 │   ├── main.py       # Main API server
 │   ├── ai_service.py # AI service integration
 │   └── requirements.txt
 ├── frontend/          # Web interface
 │   └── index.html    # Vue 3 single-page app
-└── scripts/          # Helper scripts
-    └── check_api.py  # API health check
+├── scripts/          # Helper scripts
+│   ├── install.sh    # One-click installation script
+│   ├── check_api.py  # API health check
+│   └── test_skill.py # Skill trigger test
+└── references/       # Documentation
+    └── usage_examples.md
 ```
 
 ## Quick Start
 
-### 1. Start Backend Server
+### 1. One-Click Installation (Recommended)
 
 ```bash
-cd my-stock/backend
+bash scripts/install.sh
+```
+
+### 2. Start Backend Server
+
+```bash
+cd backend
 pip install -r requirements.txt
 python main.py
 ```
 
 The API server runs on `http://localhost:8000`
 
-### 2. Start Frontend (Optional)
+### 3. Start Frontend (Optional)
 
 ```bash
-cd my-stock/frontend
+cd frontend
 python -m http.server 5000
 ```
 
@@ -173,7 +183,7 @@ The assistant should:
 ### Project Structure
 
 ```
-my-stock/
+./
 ├── backend/
 │   ├── main.py          # FastAPI application
 │   ├── ai_service.py    # AI integration
@@ -183,8 +193,12 @@ my-stock/
 ├── frontend/
 │   └── index.html       # Single-file Vue 3 app
 ├── scripts/
-│   └── check_api.py     # API health check
-└── README.md            # This file
+│   ├── install.sh       # One-click installation script
+│   ├── check_api.py     # API health check
+│   └── test_skill.py    # Skill trigger test
+├── references/
+│   └── usage_examples.md # Detailed usage examples
+└── README.md            # Project documentation
 ```
 
 ### Adding New Features
