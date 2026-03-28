@@ -702,6 +702,23 @@ async def get_shareholder_activity():
         def clean_record(record):
             return {k: clean_data(v) for k, v in record.items()}
 
+        def standardize_column_name(col_name):
+            """标准化列名，去掉动态日期范围后缀"""
+            import re
+            match = re.match(r'^(.+)\[\d{8}(?:-\d{8})?\]$', col_name)
+            if match:
+                return match.group(1)
+            return col_name
+
+        def standardize_record(record):
+            """标准化记录，将所有列名去掉日期范围后缀"""
+            new_record = {}
+            for k, v in record.items():
+                new_key = standardize_column_name(k)
+                if new_key not in new_record:
+                    new_record[new_key] = clean_data(v)
+            return new_record
+
         def sort_by_field(items, field, reverse=True):
             return sorted(items, key=lambda x: float(x.get(field) or 0), reverse=reverse)
 
@@ -713,16 +730,8 @@ async def get_shareholder_activity():
         try:
             df = pywencai.get(query='股东增持', loop=True, max_retries=2)
             if df is not None and not df.empty:
-
-                cols = ['股票代码', '股票简称', '最新价', '最新涨跌幅']
-                if '大股东变动占流通股比合计[20260302-20260327]' in df.columns:
-                    cols.append('大股东变动占流通股比合计[20260302-20260327]')
-                if '大股东变动股数合计[20260302-20260327]' in df.columns:
-                    cols.append('大股东变动股数合计[20260302-20260327]')
-                if '大股东变动市值合计[20260302-20260327]' in df.columns:
-                    cols.append('大股东变动市值合计[20260302-20260327]')
-                items = [clean_record(r) for r in df[cols].to_dict('records')]
-                items = sort_by_field(items, '大股东变动市值合计[20260302-20260327]', True)
+                items = [standardize_record(r) for r in df.to_dict('records')]
+                items = sort_by_field(items, '大股东变动市值合计', True)
                 result['shareholding_increase'] = {
                     'total': len(df),
                     'items': items
@@ -736,20 +745,8 @@ async def get_shareholder_activity():
         try:
             df = pywencai.get(query='股票回购', loop=True, max_retries=2)
             if df is not None and not df.empty:
-
-                cols = ['股票代码', '股票简称', '最新价', '最新涨跌幅']
-                if '回购董事会预案公告日[20250327-20260328]' in df.columns:
-                    cols.append('回购董事会预案公告日[20250327-20260328]')
-                if '回购方案进度[20250327-20260328]' in df.columns:
-                    cols.append('回购方案进度[20250327-20260328]')
-                if '拟回购资金总额[20250327-20260328]' in df.columns:
-                    cols.append('拟回购资金总额[20250327-20260328]')
-                if '拟回购股份数量上限[20250327-20260328]' in df.columns:
-                    cols.append('拟回购股份数量上限[20250327-20260328]')
-                if '最新每股回购价格上限[20250327-20260328]' in df.columns:
-                    cols.append('最新每股回购价格上限[20250327-20260328]')
-                items = [clean_record(r) for r in df[cols].to_dict('records')]
-                items = sort_by_field(items, '拟回购资金总额[20250327-20260328]', True)
+                items = [standardize_record(r) for r in df.to_dict('records')]
+                items = sort_by_field(items, '拟回购资金总额', True)
                 result['buyback'] = {
                     'total': len(df),
                     'items': items
@@ -763,16 +760,8 @@ async def get_shareholder_activity():
         try:
             df = pywencai.get(query='高管增持', loop=True, max_retries=2)
             if df is not None and not df.empty:
-
-                cols = ['股票代码', '股票简称', '最新价', '最新涨跌幅']
-                if '高管变动占流通股比合计[20260302-20260327]' in df.columns:
-                    cols.append('高管变动占流通股比合计[20260302-20260327]')
-                if '高管变动股数合计[20260302-20260327]' in df.columns:
-                    cols.append('高管变动股数合计[20260302-20260327]')
-                if '高管变动市值合计[20260302-20260327]' in df.columns:
-                    cols.append('高管变动市值合计[20260302-20260327]')
-                items = [clean_record(r) for r in df[cols].to_dict('records')]
-                items = sort_by_field(items, '高管变动市值合计[20260302-20260327]', True)
+                items = [standardize_record(r) for r in df.to_dict('records')]
+                items = sort_by_field(items, '高管变动市值合计', True)
                 result['executive_increase'] = {
                     'total': len(df),
                     'items': items
@@ -781,6 +770,63 @@ async def get_shareholder_activity():
                 result['executive_increase'] = {'total': 0, 'items': []}
         except Exception as e:
             result['executive_increase'] = {'total': 0, 'items': [], 'error': str(e)}
+
+        return result
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {'error': str(e)}
+
+@app.get("/api/double-five-stocks")
+async def get_double_five_stocks():
+    """
+    获取"双五"股票（PE<6 且 股息率>4%）
+    双五指：PE接近5，股息率接近5%
+    """
+    try:
+        import pywencai
+        import numpy as np
+        import re
+
+        def clean_data(value):
+            if isinstance(value, (float, np.floating)):
+                if np.isnan(value) or np.isinf(value):
+                    return None
+            return value
+
+        def standardize_column_name(col_name):
+            """标准化列名，去掉动态日期范围后缀"""
+            import re
+            match = re.match(r'^(.+)\[\d{8}(?:-\d{8})?\]$', col_name)
+            if match:
+                return match.group(1)
+            return col_name
+
+        def standardize_record(record):
+            """标准化记录，将所有列名去掉日期范围后缀"""
+            new_record = {}
+            for k, v in record.items():
+                new_key = standardize_column_name(k)
+                if new_key not in new_record:
+                    new_record[new_key] = clean_data(v)
+            return new_record
+
+        # 查询双五股票
+        df = pywencai.get(query='PE>0,PE<6,股息率>4', loop=True, max_retries=2)
+
+        result = {
+            'timestamp': datetime.now().isoformat(),
+            'condition': 'PE<6 且 股息率>4%',
+            'description': 'PE接近5，股息率接近5%',
+            'total': 0,
+            'items': []
+        }
+
+        if df is not None and not df.empty:
+            items = [standardize_record(r) for r in df.to_dict('records')]
+            result['total'] = len(items)
+            result['items'] = items
 
         return result
 

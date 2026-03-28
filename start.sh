@@ -30,6 +30,21 @@ echo ""
 echo -e "${YELLOW}检查后端依赖...${NC}"
 if [ -d "backend" ]; then
     echo -e "${GREEN}✓${NC} 后端目录存在"
+
+    # 检查并升级 Python 依赖
+    if [ -f "backend/requirements.txt" ]; then
+        echo -e "  ${YELLOW}升级 Python 依赖...${NC}"
+
+        # 升级 pip
+        pip3 install --upgrade pip -q 2>&1 | grep -v "Requirement already satisfied" || true
+
+        # 升级 requirements.txt 中的依赖
+        pip3 install --upgrade -r backend/requirements.txt -q 2>&1 | grep -v "Requirement already satisfied" || true
+
+        echo -e "${GREEN}  ✓${NC} Python 依赖已检查/升级"
+    else
+        echo -e "${YELLOW}  ⚠${NC} requirements.txt 不存在"
+    fi
 else
     echo -e "${RED}✗${NC} 后端目录不存在"
     exit 1
@@ -86,7 +101,7 @@ echo ""
 echo -e "${YELLOW}启动前端界面...${NC}"
 echo -e "${BLUE}----------------------------------------${NC}"
 cd frontend
-python3 -m http.server 5000 > /tmp/mystock_frontend.log 2>&1 &
+python3 -m http.server 5001 > /tmp/mystock_frontend.log 2>&1 &
 FRONTEND_PID=$!
 cd ..
 
@@ -111,21 +126,21 @@ echo -e "${GREEN}  🎉 MyStock 启动成功！${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 echo -e "📱 访问地址："
-echo -e "  ${GREEN}前端界面: http://localhost:5000${NC}"
+echo -e "  ${GREEN}前端界面: http://localhost:5001${NC}"
 echo -e "  ${GREEN}后端 API:  http://localhost:8000${NC}"
 echo -e "  ${GREEN}API 文档:  http://localhost:8000/docs${NC}"
 echo ""
 echo -e "⚠️  提示："
 echo -e "  - 首次使用请先配置 AI 服务（如需要）"
 echo -e "  - 查看日志: tail -f /tmp/mystock_*.log"
-echo -e "  - 停止服务: pkill -f 'python3.*main.py' && pkill -f 'http.server 5000'"
+echo -e "  - 停止服务: pkill -f 'python3.*main.py' && pkill -f 'http.server 5001'"
 echo ""
 echo -e "${YELLOW}正在打开浏览器...${NC}"
 
 # 自动打开浏览器（macOS）
 if [[ "$OSTYPE" == "darwin"* ]]; then
     sleep 1
-    open http://localhost:5000
+    open http://localhost:5001
 fi
 
 echo ""

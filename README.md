@@ -2,7 +2,7 @@
 
 🚀 **MyStock** 是一个功能完整的智能股票分析助手，提供实时行情、打板分析、股东动态监控等核心功能，拥有精美的 **Web UI 界面**，开箱即用！
 
-![MyStock 界面预览](assets/screenshot.png)
+![MyStock 界面预览](assets/mystock-demo.png)
 
 ## 🎯 功能特点
 
@@ -95,7 +95,7 @@ bash scripts/install.sh
 4. ✅ **自动打开浏览器**展示 UI
 
 访问地址：
-- 🎨 **前端界面**: http://localhost:5000
+- 🎨 **前端界面**: http://localhost:5001
 - ⚡ **后端 API**: http://localhost:8000
 - 📖 **API 文档**: http://localhost:8000/docs
 
@@ -125,7 +125,7 @@ cd frontend
 
 ### 访问应用
 
-打开浏览器访问：`http://localhost:5000`
+打开浏览器访问：`http://localhost:5001`
 
 ## 📁 项目结构
 

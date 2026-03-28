@@ -12,7 +12,7 @@ metadata:
 
 🎨 MyStock is a **full-featured stock analysis assistant** with a **beautiful Web UI**, providing real-time quotes, limit-up tracking, shareholder dynamics monitoring, and more!
 
-![MyStock UI Preview](assets/screenshot.png)
+![MyStock Demo](assets/mystock-demo.png)
 
 ## ✨ Capabilities
 
@@ -112,7 +112,7 @@ cd frontend
 python -m http.server 5000
 ```
 
-Access the web interface at `http://localhost:5000`
+Access the web interface at `http://localhost:5001`
 
 **The UI will open automatically when using `./start.sh`**
 
