@@ -25,12 +25,44 @@
 
 ## 🚀 快速开始
 
+### 环境要求
+
+- Python 3.8+
+- Node.js 14+ ⚠️ **重要：pywencai 依赖 jsdom**
+- 网络连接（获取实时数据）
+
+**Node.js 安装（重要）**：
+
+```bash
+# 安装 Node.js（如果未安装）
+# 下载地址：https://nodejs.org/
+
+# 安装 jsdom（pywencai 数据获取必需）
+npm install -g jsdom
+```
+
+### 一键安装（推荐）
+
+```bash
+bash scripts/install.sh
+```
+
+这会自动安装所有依赖，包括 Node.js jsdom。
+
 ### 后端启动
 
 ```bash
 cd backend
 pip install -r requirements.txt
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+./start.sh  # 自动设置 NODE_PATH
+```
+
+或手动启动：
+
+```bash
+cd backend
+export NODE_PATH=$(npm root -g)  # 设置 Node.js 模块路径
+python main.py
 ```
 
 ### 前端启动

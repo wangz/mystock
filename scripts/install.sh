@@ -27,6 +27,34 @@ else
     exit 1
 fi
 
+# 检查 Node.js 和 npm
+echo ""
+echo -e "${YELLOW}检查 Node.js 和 npm...${NC}"
+if command -v node &> /dev/null && command -v npm &> /dev/null; then
+    NODE_VERSION=$(node --version 2>&1)
+    echo -e "${GREEN}✓ Node.js ${NODE_VERSION} 已安装${NC}"
+else
+    echo -e "${YELLOW}⚠ Node.js 未安装${NC}"
+    echo -e "${YELLOW}  请安装 Node.js: https://nodejs.org/${NC}"
+fi
+
+# 安装 jsdom（pywencai 依赖）
+echo ""
+echo -e "${YELLOW}安装 jsdom（pywencai 数据获取依赖）...${NC}"
+if command -v npm &> /dev/null; then
+    npm install -g jsdom 2>&1 | grep -v "^npm warn" || true
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ jsdom 安装完成${NC}"
+        # 设置 NODE_PATH
+        export NODE_PATH=$(npm root -g)
+        echo -e "${GREEN}✓ NODE_PATH 已设置: $NODE_PATH${NC}"
+    else
+        echo -e "${YELLOW}⚠ jsdom 安装可能失败，请手动运行: npm install -g jsdom${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠ npm 未安装，跳过 jsdom 安装${NC}"
+fi
+
 # 检查 pip
 echo ""
 echo -e "${YELLOW}检查 pip...${NC}"
@@ -80,6 +108,11 @@ echo -e "下一步："
 echo -e "  1. 启动后端: ${YELLOW}./backend/start.sh${NC}"
 echo -e "  2. 启动前端: ${YELLOW}cd frontend && python3 -m http.server 5000${NC}"
 echo -e "  3. 访问: ${YELLOW}http://localhost:5000${NC}"
+echo ""
+echo -e "⚠️  重要提示："
+echo -e "  - 确保已安装 Node.js 和 jsdom（见上方安装步骤）"
+echo -e "  - 启动脚本会自动设置 NODE_PATH"
+echo -e "  - 如遇数据获取问题，请运行: npm install -g jsdom"
 echo ""
 echo -e "其他命令："
 echo -e "  API 健康检查: ${YELLOW}python3 scripts/check_api.py${NC}"

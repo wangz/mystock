@@ -58,15 +58,22 @@ Invoke this skill when the user:
 bash scripts/install.sh
 ```
 
+This will automatically:
+- Install Node.js dependencies (jsdom for pywencai)
+- Install Python dependencies
+- Configure environment variables
+
 ### 2. Start Backend Server
 
 ```bash
 cd backend
 pip install -r requirements.txt
-python main.py
+./start.sh
 ```
 
-The API server runs on `http://localhost:8000`
+The backend server runs on `http://localhost:8000`
+
+**Important**: The `start.sh` script automatically sets `NODE_PATH` for pywencai jsdom dependency.
 
 ### 3. Start Frontend (Optional)
 
@@ -77,7 +84,26 @@ python -m http.server 5000
 
 Access the web interface at `http://localhost:5000`
 
-### 3. API Endpoints
+### ⚠️ Important Dependencies
+
+#### Node.js (Required for pywencai)
+
+pywencai uses jsdom for web scraping, which requires Node.js:
+
+```bash
+# Install Node.js (if not installed)
+# Download from: https://nodejs.org/
+
+# Install jsdom globally
+npm install -g jsdom
+
+# Verify installation
+node -e "require('jsdom')"
+```
+
+The startup script automatically sets `NODE_PATH` to find jsdom.
+
+### 4. API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
