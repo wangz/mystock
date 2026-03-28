@@ -10,15 +10,29 @@ metadata:
 
 # MyStock - 我的股票智能助手
 
-MyStock is an intelligent stock analysis assistant that provides real-time quotes, limit-up tracking, shareholder dynamics monitoring, and investment research support.
+🎨 MyStock is a **full-featured stock analysis assistant** with a **beautiful Web UI**, providing real-time quotes, limit-up tracking, shareholder dynamics monitoring, and more!
 
-## Capabilities
+![MyStock UI Preview](assets/screenshot.png)
+
+## ✨ Capabilities
 
 1. **Real-time Quotes** - Query stock prices and percentage changes
 2. **Limit-up Analysis** - Track daily limit-up boards and first-board opportunities
 3. **Shareholder Dynamics** - Monitor shareholder increases, buybacks, and executive transactions
 4. **Portfolio Management** - Manage watchlists and investment notes
 5. **AI Assistant** - Get AI-powered investment insights
+6. **🎨 Beautiful Web UI** - Modern Vue 3 + Element Plus interface
+
+## 🎨 Web UI Features
+
+The skill includes a complete **web interface** that users can interact with:
+
+- **Watchlist Management** - Add/remove stocks with one click
+- **Real-time Data Display** - Live price updates with color-coded changes
+- **Limit-up Analysis** - Visual tracking of daily limit-up stocks
+- **Shareholder Activity** - Detailed tabs for different activity types
+- **AI Chat Assistant** - Built-in AI assistant for stock questions
+- **Responsive Design** - Works on desktop and mobile
 
 ## When to Use
 
@@ -30,18 +44,20 @@ Invoke this skill when the user:
 - Needs shareholder/investor activity information
 - Wants to track investment portfolio
 - Asks for stock analysis or research
+- Wants to see a **visual interface** for stock analysis
 - Mentions terms like: 打板, 涨停, 股东增持, 回购, 高管增持
 
 ## Architecture
 
 ```
 ./
+├── start.sh           # ⭐ One-click startup (UI + Backend)
 ├── backend/           # FastAPI backend server
 │   ├── main.py       # Main API server
 │   ├── ai_service.py # AI service integration
 │   └── requirements.txt
-├── frontend/          # Web interface
-│   └── index.html    # Vue 3 single-page app
+├── frontend/         # Web interface
+│   └── index.html    # Vue 3 single-page app ⭐
 ├── scripts/          # Helper scripts
 │   ├── install.sh    # One-click installation script
 │   ├── check_api.py  # API health check
@@ -59,11 +75,25 @@ bash scripts/install.sh
 ```
 
 This will automatically:
-- Install Node.js dependencies (jsdom for pywencai)
-- Install Python dependencies
-- Configure environment variables
+- ✅ Install Node.js dependencies (jsdom for pywencai)
+- ✅ Install Python dependencies
+- ✅ Configure environment variables
+- ✅ Prepare data directories
 
-### 2. Start Backend Server
+### 2. ⚡ Start Everything (Recommended)
+
+```bash
+./start.sh
+```
+
+This one script starts:
+- ✅ Backend API server (port 8000)
+- ✅ Frontend web interface (port 5000)
+- ✅ Automatically opens browser with UI
+
+**Or start separately:**
+
+### 3. Start Backend Server
 
 ```bash
 cd backend
@@ -75,7 +105,7 @@ The backend server runs on `http://localhost:8000`
 
 **Important**: The `start.sh` script automatically sets `NODE_PATH` for pywencai jsdom dependency.
 
-### 3. Start Frontend (Optional)
+### 4. Start Frontend UI
 
 ```bash
 cd frontend
@@ -83,6 +113,8 @@ python -m http.server 5000
 ```
 
 Access the web interface at `http://localhost:5000`
+
+**The UI will open automatically when using `./start.sh`**
 
 ### ⚠️ Important Dependencies
 
