@@ -40,8 +40,3 @@ htmlcov/
 *.bak
 check_api.py
 test_frontend_logic.py
-
-# Large data files
-*.db
-roe_data.json
-stock_codes.json

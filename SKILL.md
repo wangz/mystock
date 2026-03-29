@@ -1,18 +1,19 @@
----
+***
+
 name: my-stock
 description: MyStock - 我的股票智能助手。Use when user asks about stock quotes, market analysis, limit-up tracking, shareholder dynamics, investment research, or portfolio management. Handles real-time prices, technical analysis, and financial data queries.
 metadata:
-  version: 1.0.0
-  author: wangz
-  license: MIT
-  category: finance
----
+version: 1.1.1
+author: wangz
+license: MIT
+category: finance
+-----------------
 
 # MyStock - 我的股票智能助手
 
 🎨 MyStock is a **full-featured stock analysis assistant** with a **beautiful Web UI**, providing real-time quotes, limit-up tracking, shareholder dynamics monitoring, and more!
 
-![MyStock Demo](assets/mystock-demo.png)
+!\[MyStock Demo]\(assets/mystock-demo.png null)
 
 ## ✨ Capabilities
 
@@ -75,6 +76,7 @@ bash scripts/install.sh
 ```
 
 This will automatically:
+
 - ✅ Install Node.js dependencies (jsdom for pywencai)
 - ✅ Install Python dependencies
 - ✅ Configure environment variables
@@ -87,6 +89,7 @@ This will automatically:
 ```
 
 This one script starts:
+
 - ✅ Backend API server (port 8000)
 - ✅ Frontend web interface (port 5000)
 - ✅ Automatically opens browser with UI
@@ -114,7 +117,7 @@ python -m http.server 5000
 
 Access the web interface at `http://localhost:5001`
 
-**The UI will open automatically when using `./start.sh`**
+**The UI will open automatically when using** **`./start.sh`**
 
 ### ⚠️ Important Dependencies
 
@@ -137,13 +140,13 @@ The startup script automatically sets `NODE_PATH` to find jsdom.
 
 ### 4. API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/stocks` | GET | Get stock quotes |
-| `/api/limit-up-analysis` | GET | Get limit-up board analysis |
-| `/api/shareholder-activity` | GET | Get shareholder dynamics |
-| `/api/portfolio` | GET/POST | Manage portfolio |
-| `/api/chat` | POST | AI chat assistant |
+| Endpoint                    | Method   | Description                 |
+| --------------------------- | -------- | --------------------------- |
+| `/api/stocks`               | GET      | Get stock quotes            |
+| `/api/limit-up-analysis`    | GET      | Get limit-up board analysis |
+| `/api/shareholder-activity` | GET      | Get shareholder dynamics    |
+| `/api/portfolio`            | GET/POST | Manage portfolio            |
+| `/api/chat`                 | POST     | AI chat assistant           |
 
 ## Usage Examples
 
@@ -208,12 +211,10 @@ The assistant should:
    ```bash
    lsof -i:8000
    ```
-
 2. Verify Python dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-
 3. Check environment variables:
    ```bash
    cp .env.example .env
@@ -226,7 +227,6 @@ The assistant should:
    ```bash
    curl http://localhost:8000/
    ```
-
 2. Check network connectivity
 3. Review server logs for errors
 
@@ -275,6 +275,7 @@ This skill can be used alongside Claude Code for:
 - Market trend analysis
 
 When Claude Code detects stock-related queries, it can:
+
 1. Invoke this skill automatically
 2. Use backend APIs for data
 3. Provide AI-powered insights
