@@ -67,22 +67,13 @@ def get_roe_data(code):
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        
-        # 查询股票ID
-        cursor.execute('SELECT id FROM stocks WHERE code = ?', (code,))
-        stock_id = cursor.fetchone()
-        
-        if not stock_id:
-            conn.close()
-            return []
-        
-        # 查询ROE数据
-        cursor.execute('SELECT date, roe FROM roe_data WHERE stock_id = ? ORDER BY date DESC', (stock_id[0],))
+
+        # 直接使用 code 查询
+        cursor.execute('SELECT date, roe FROM roe_data WHERE code = ? ORDER BY date DESC', (code,))
         roe_records = cursor.fetchall()
-        
+
         conn.close()
-        
-        # 转换为字典格式
+
         return [{'date': date, 'roe': roe} for date, roe in roe_records]
     except Exception as e:
         print(f"获取ROE数据失败: {e}")

@@ -38,5 +38,3 @@ htmlcov/
 # Temporary files
 *.tmp
 *.bak
-check_api.py
-test_frontend_logic.py
