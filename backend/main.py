@@ -25,20 +25,68 @@ app.add_middleware(
 
 # 数据文件路径（使用绝对路径）
 import os
+import sqlite3
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_FILE = os.path.join(BASE_DIR, "portfolio_data.json")
 STOCK_CODES_FILE = os.path.join(BASE_DIR, "stock_codes.json")
 MEMOS_FILE = os.path.join(BASE_DIR, "memos.json")
+DB_FILE = os.path.join(BASE_DIR, "finance_data.db")
 
 def load_stock_codes():
     """加载股票代码信息"""
     try:
-        if os.path.exists(STOCK_CODES_FILE):
-            with open(STOCK_CODES_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT code, name, aliases FROM stock_codes')
+        stock_codes = {}
+        
+        for row in cursor.fetchall():
+            code, name, aliases_json = row
+            aliases = json.loads(aliases_json) if aliases_json else []
+            stock_codes[code] = {
+                'name': name,
+                'aliases': aliases
+            }
+        
+        conn.close()
+        return stock_codes
     except Exception as e:
         print(f"加载 stock_codes 失败: {e}")
+        # 尝试从 JSON 文件加载作为备份
+        try:
+            if os.path.exists(STOCK_CODES_FILE):
+                with open(STOCK_CODES_FILE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"从 JSON 文件加载 stock_codes 失败: {e}")
     return {}
+
+def get_roe_data(code):
+    """从数据库获取股票的ROE数据"""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # 查询股票ID
+        cursor.execute('SELECT id FROM stocks WHERE code = ?', (code,))
+        stock_id = cursor.fetchone()
+        
+        if not stock_id:
+            conn.close()
+            return []
+        
+        # 查询ROE数据
+        cursor.execute('SELECT date, roe FROM roe_data WHERE stock_id = ? ORDER BY date DESC', (stock_id[0],))
+        roe_records = cursor.fetchall()
+        
+        conn.close()
+        
+        # 转换为字典格式
+        return [{'date': date, 'roe': roe} for date, roe in roe_records]
+    except Exception as e:
+        print(f"获取ROE数据失败: {e}")
+        return []
 
 # Pydantic 模型
 class Stock(BaseModel):
@@ -125,37 +173,54 @@ async def get_all_data():
     return load_data()
 
 # 获取股票列表（快速返回，不调用外部API）
+def load_memos():
+    """加载备忘录数据"""
+    try:
+        if os.path.exists(MEMOS_FILE):
+            with open(MEMOS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"加载备忘录失败: {e}")
+    return {}
+
 @app.get("/api/stock-list")
 async def get_stock_list():
     data = load_data()
-    portfolio = data.get('portfolio', [])  # 存储的是 code
-    watchlist = data.get('watchlist', [])  # 存储的是 code
-    stock_codes = load_stock_codes()  # 从独立文件加载
+    portfolio = data.get('portfolio', [])
+    watchlist = data.get('watchlist', [])
+    stock_codes = load_stock_codes()
+    memos = load_memos()
 
     portfolio_list = []
     for code in portfolio:
         stock_info = stock_codes.get(code, {})
         name = stock_info.get('name', code)
+        memo_info = memos.get(code, {})
         portfolio_list.append({
-            'ticker': name,  # 显示名称
+            'ticker': name,
             'code': code,
             'name': name,
             'price': None,
             'change': None,
-            'change_percent': None
+            'change_percent': None,
+            'memo': memo_info.get('memo', ''),
+            'updated_at': memo_info.get('updated_at', '')
         })
 
     watchlist_list = []
     for code in watchlist:
         stock_info = stock_codes.get(code, {})
         name = stock_info.get('name', code)
+        memo_info = memos.get(code, {})
         watchlist_list.append({
-            'ticker': name,  # 显示名称
+            'ticker': name,
             'code': code,
             'name': name,
             'price': None,
             'change': None,
-            'change_percent': None
+            'change_percent': None,
+            'memo': memo_info.get('memo', ''),
+            'updated_at': memo_info.get('updated_at', '')
         })
 
     return {
@@ -200,6 +265,23 @@ async def get_portfolio():
         "count": len(result),
         "timestamp": datetime.now().isoformat()
     }
+
+# 获取股票的ROE数据
+@app.get("/api/roe-data/{code}")
+async def get_stock_roe(code: str):
+    """获取股票的ROE数据"""
+    try:
+        roe_data = get_roe_data(code)
+        stock_codes = load_stock_codes()
+        name = stock_codes.get(code, {}).get('name', code)
+        
+        return {
+            "code": code,
+            "name": name,
+            "roe_data": roe_data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取ROE数据失败: {str(e)}")
 
 # 获取观察列表（带实时数据）- 并行获取
 @app.get("/api/watchlist")
@@ -550,14 +632,14 @@ async def save_memo(memo_data: dict):
         print(f"加载 memos 失败: {e}")
         memos = {}
 
-    if memo:
-        memos[name] = {
-            'code': code,
+    if memo and code:
+        memos[code] = {
+            'name': name,
             'memo': memo,
             'updated_at': datetime.now().isoformat()
         }
-    elif name in memos:
-        del memos[name]
+    elif code in memos:
+        del memos[code]
 
     # 保存数据到memos.json
     try:

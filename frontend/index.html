@@ -2296,7 +2296,7 @@
 
                         // 更新这批数据
                         batch.forEach(data => {
-                            const index = portfolio.value.findIndex(s => s.ticker === data.ticker);
+                            const index = portfolio.value.findIndex(s => s.code === data.code);
                             if (index !== -1) {
                                 portfolio.value[index] = { ...portfolio.value[index], ...data };
                             }
@@ -2314,7 +2314,7 @@
                         updateProgress.value = `更新观察 ${Math.min(i + batchSize, newWatchlist.length)}/${newWatchlist.length}`;
 
                         batch.forEach(data => {
-                            const index = watchlist.value.findIndex(s => s.ticker === data.ticker);
+                            const index = watchlist.value.findIndex(s => s.code === data.code);
                             if (index !== -1) {
                                 watchlist.value[index] = { ...watchlist.value[index], ...data };
                             }
@@ -2412,30 +2412,6 @@
                 };
 
                 // 加载备忘
-                const fetchMemos = async () => {
-                    try {
-                        const response = await fetch(`${API_BASE}/api/stock-memo`);
-                        const data = await response.json();
-                        const memos = data.memos || {};
-
-                        portfolio.value.forEach(stock => {
-                            if (memos[stock.name]) {
-                                stock.memo = memos[stock.name].memo;
-                                stock.updated_at = memos[stock.name].updated_at;
-                            }
-                        });
-
-                        watchlist.value.forEach(stock => {
-                            if (memos[stock.name]) {
-                                stock.memo = memos[stock.name].memo;
-                                stock.updated_at = memos[stock.name].updated_at;
-                            }
-                        });
-                    } catch (error) {
-                        console.error('获取备忘失败:', error);
-                    }
-                };
-
                 // 格式化时间
                 const formatTime = (isoTime) => {
                     if (!isoTime) return '';
@@ -2926,9 +2902,9 @@
                 /* ─────────────────────────────────────────
                    📦 6. 生命周期钩子
                    ───────────────────────────────────────── */
-                onMounted(() => {
-                    // 第一步：快速加载股票列表（立即显示名称）
-                    loadStockList();
+                onMounted(async () => {
+                    // 第一步：加载股票列表（已包含备忘信息）
+                    await loadStockList();
                     // 第二步：异步获取实时价格
                     fetchPrices();
                     // 第三步：加载打板分析数据
@@ -2939,8 +2915,6 @@
                     fetchInsights();
                     // 第六步：加载历史记录
                     fetchHistory();
-                    // 第七步：加载备忘
-                    fetchMemos();
                     // 添加全局拖拽事件监听
                     document.addEventListener('mousemove', handleResize);
                     document.addEventListener('mouseup', stopResize);
@@ -3029,7 +3003,6 @@
                     sendMessage,
                     handleAutoRefreshChange,
                     fetchHistory,
-                    fetchMemos,
                     formatTime,
                     restoreStock,
                     removeHistory,
