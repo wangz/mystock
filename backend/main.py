@@ -557,16 +557,6 @@ async def restore_stock(restore_data: dict):
     from_list = restore_data.get('from')
     history_index = restore_data.get('history_index')
 
-    # 添加到 stock_codes.json
-    stock_codes = load_stock_codes()
-    if code and code not in stock_codes:
-        stock_codes[code] = {
-            'name': name,
-            'aliases': []
-        }
-        with open(STOCK_CODES_FILE, 'w', encoding='utf-8') as f:
-            json.dump(stock_codes, f, ensure_ascii=False, indent=4)
-
     # 添加到原列表（存储 code）
     if from_list == 'portfolio':
         portfolio_list = data.get('portfolio', [])
@@ -711,17 +701,6 @@ async def add_stock(stock_data: dict):
     name = stock_data.get('name')
     code = stock_data.get('code')
     target = stock_data.get('target')
-
-    # 添加到 stock_codes.json
-    stock_codes = load_stock_codes()
-    if code not in stock_codes:
-        stock_codes[code] = {
-            'name': name,
-            'aliases': []
-        }
-        # 保存到独立文件
-        with open(STOCK_CODES_FILE, 'w', encoding='utf-8') as f:
-            json.dump(stock_codes, f, ensure_ascii=False, indent=4)
 
     # 从 history（回收站）中移除
     history = data.get('history', [])
