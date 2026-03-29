@@ -153,6 +153,69 @@ def get_stock_data(ticker: str, code: str) -> Optional[dict]:
         print(f"Error fetching stock data for {ticker}: {e}")
         return None
 
+
+def get_stocks_data_batch(stocks: list) -> dict:
+    """
+    批量获取股票数据（一次性请求）
+    stocks: [{'name': '贵州茅台', 'code': 'sh600519'}, ...]
+    返回: {'sh600519': {...}, 'sz000858': {...}, ...}
+    """
+    if not stocks:
+        return {}
+
+    codes = [s['code'] for s in stocks]
+    name_map = {s['code']: s['name'] for s in stocks}
+
+    try:
+        url = f"https://qt.gtimg.cn/q={','.join(codes)}"
+        response = requests.get(url, timeout=5)
+
+        result = {}
+        if response.status_code == 200 and response.content:
+            try:
+                data = response.content.decode('gbk', errors='ignore')
+            except:
+                data = response.text
+
+            for line in data.strip().split(';'):
+                if not line or '=' not in line:
+                    continue
+
+                try:
+                    code_part = line.split('="')[0].replace('v_', '')
+                    parts = line.split('="')[1].rstrip('";')
+                    fields = parts.split('~')
+
+                    if len(fields) > 32:
+                        code = fields[2] if len(fields) > 2 else code_part
+                        current_price = float(fields[3])
+                        previous_close = float(fields[4])
+                        change = float(fields[31])
+                        change_percent = float(fields[32])
+
+                        if current_price > 0:
+                            result[code] = {
+                                'ticker': name_map.get(code, code),
+                                'code': code,
+                                'name': fields[1],
+                                'price': current_price,
+                                'previous_close': previous_close,
+                                'change': change,
+                                'change_percent': change_percent
+                            }
+                except (IndexError, ValueError) as e:
+                    continue
+
+        return result
+    except Exception as e:
+        print(f"批量获取股票数据失败: {e}")
+        return {}
+
+
+async def fetch_stock_data_async(ticker: str, code: str):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, get_stock_data, ticker, code)
+
 # API 路由
 @app.get("/")
 async def root():
@@ -225,36 +288,64 @@ async def fetch_stock_data_async(ticker: str, code: str):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, get_stock_data, ticker, code)
 
-# 获取持仓列表（带实时数据）- 并行获取
+# 获取持仓列表（带实时数据）- 批量获取
 @app.get("/api/portfolio")
 async def get_portfolio():
+    import time
+    timings = {}
+
+    t0 = time.time()
     data = load_data()
-    portfolio = data.get('portfolio', [])  # 现在存储的是 code
+    timings['load_data'] = f"{(time.time()-t0)*1000:.1f}ms"
+
+    portfolio = data.get('portfolio', [])
+
+    t1 = time.time()
     stock_codes = load_stock_codes()
+    timings['load_stock_codes'] = f"{(time.time()-t1)*1000:.1f}ms"
 
-    # 创建所有任务
-    tasks = []
-    async def return_none(code):
-        name = stock_codes.get(code, {}).get('name', code)
-        return {'ticker': name, 'code': code, 'price': None, 'change': None, 'change_percent': None}
-
+    t2 = time.time()
+    # 准备需要获取数据的股票列表
+    stocks_to_fetch = []
     for code in portfolio:
-        # portfolio 中存储的已经是 code，直接使用
         if code in stock_codes:
-            tasks.append(fetch_stock_data_async(stock_codes[code]['name'], code))
+            stocks_to_fetch.append({
+                'code': code,
+                'name': stock_codes[code]['name']
+            })
+
+    # 批量获取所有股票数据（一次性请求）
+    stocks_data = await asyncio.get_event_loop().run_in_executor(
+        None, get_stocks_data_batch, stocks_to_fetch
+    )
+    timings['fetch_stock_data'] = f"{(time.time()-t2)*1000:.1f}ms ({len(stocks_to_fetch)} 只股票)"
+
+    # 构建结果列表
+    result = []
+    for code in portfolio:
+        if code in stocks_data:
+            result.append(stocks_data[code])
         else:
-            tasks.append(return_none(code))
+            name = stock_codes.get(code, {}).get('name', code)
+            result.append({
+                'ticker': name,
+                'code': code,
+                'price': None,
+                'change': None,
+                'change_percent': None
+            })
 
-    # 并行执行所有任务
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    timings['total'] = f"{(time.time()-t0)*1000:.1f}ms"
 
-    # 过滤掉None和异常
-    result = [r for r in results if r and not isinstance(r, Exception)]
+    print(f"\n[性能分析] get_portfolio:")
+    for step, t in timings.items():
+        print(f"  {step}: {t}")
 
     return {
         "portfolio": result,
         "count": len(result),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "_timings": timings
     }
 
 # 获取股票的ROE数据
@@ -274,36 +365,64 @@ async def get_stock_roe(code: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取ROE数据失败: {str(e)}")
 
-# 获取观察列表（带实时数据）- 并行获取
+# 获取观察列表（带实时数据）- 批量获取
 @app.get("/api/watchlist")
 async def get_watchlist():
+    import time
+    timings = {}
+
+    t0 = time.time()
     data = load_data()
-    watchlist = data.get('watchlist', [])  # 现在存储的是 code
+    timings['load_data'] = f"{(time.time()-t0)*1000:.1f}ms"
+
+    watchlist = data.get('watchlist', [])
+
+    t1 = time.time()
     stock_codes = load_stock_codes()
+    timings['load_stock_codes'] = f"{(time.time()-t1)*1000:.1f}ms"
 
-    # 创建所有任务
-    tasks = []
-    async def return_none_watch(code):
-        name = stock_codes.get(code, {}).get('name', code)
-        return {'ticker': name, 'code': code, 'price': None, 'change': None, 'change_percent': None}
-
+    t2 = time.time()
+    # 准备需要获取数据的股票列表
+    stocks_to_fetch = []
     for code in watchlist:
-        # watchlist 中存储的已经是 code，直接使用
         if code in stock_codes:
-            tasks.append(fetch_stock_data_async(stock_codes[code]['name'], code))
+            stocks_to_fetch.append({
+                'code': code,
+                'name': stock_codes[code]['name']
+            })
+
+    # 批量获取所有股票数据（一次性请求）
+    stocks_data = await asyncio.get_event_loop().run_in_executor(
+        None, get_stocks_data_batch, stocks_to_fetch
+    )
+    timings['fetch_stock_data'] = f"{(time.time()-t2)*1000:.1f}ms ({len(stocks_to_fetch)} 只股票)"
+
+    # 构建结果列表
+    result = []
+    for code in watchlist:
+        if code in stocks_data:
+            result.append(stocks_data[code])
         else:
-            tasks.append(return_none_watch(code))
+            name = stock_codes.get(code, {}).get('name', code)
+            result.append({
+                'ticker': name,
+                'code': code,
+                'price': None,
+                'change': None,
+                'change_percent': None
+            })
 
-    # 并行执行所有任务
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    timings['total'] = f"{(time.time()-t0)*1000:.1f}ms"
 
-    # 过滤掉None和异常
-    result = [r for r in results if r and not isinstance(r, Exception)]
+    print(f"\n[性能分析] get_watchlist:")
+    for step, t in timings.items():
+        print(f"  {step}: {t}")
 
     return {
         "watchlist": result,
         "count": len(result),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "_timings": timings
     }
 
 # 添加持仓
