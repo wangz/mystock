@@ -1069,7 +1069,7 @@
                         <el-option label="30秒" :value="30000"></el-option>
                     </el-select>
 
-                    <el-button v-if="!autoRefresh" type="primary" size="small" @click="fetchData">
+                    <el-button v-if="!autoRefresh" type="primary" size="small" @click="fetchPrices">
                         刷新
                     </el-button>
 
@@ -2283,32 +2283,23 @@
                         fetchJson(`${API_BASE}/api/watchlist`)
                     ]);
 
-                    portfolio.value = portfolioRes.portfolio || [];
-                    watchlist.value = watchlistRes.watchlist || [];
+                    // 合并数据，保留 memo 等字段
+                    const newPortfolio = portfolioRes.portfolio || [];
+                    const newWatchlist = watchlistRes.watchlist || [];
+
+                    // 更新持仓，保留原有 memo
+                    portfolio.value = portfolio.value.map(stock => {
+                        const updated = newPortfolio.find(s => s.code === stock.code);
+                        return updated ? { ...stock, ...updated } : stock;
+                    });
+
+                    // 更新观察列表
+                    watchlist.value = watchlist.value.map(stock => {
+                        const updated = newWatchlist.find(s => s.code === stock.code);
+                        return updated ? { ...stock, ...updated } : stock;
+                    });
 
                     priceLoading.value = false;
-                };
-
-                // 获取数据（包含价格）
-                const fetchData = async () => {
-                    try {
-                        const [portfolioRes, watchlistRes] = await Promise.all([
-                            fetchJson(`${API_BASE}/api/portfolio`),
-                            fetchJson(`${API_BASE}/api/watchlist`)
-                        ]);
-
-                        portfolio.value = portfolioRes.portfolio || [];
-                        watchlist.value = watchlistRes.watchlist || [];
-
-                        const now = new Date();
-                        lastUpdate.value = now.toLocaleTimeString('zh-CN', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit'
-                        });
-                    } catch (error) {
-                        console.error('获取数据失败:', error);
-                    }
                 };
 
                 // 感悟管理
@@ -2871,9 +2862,11 @@
                     setTimeout(() => fetchLimitUpAnalysis(), 100);
                     // 第四步：延迟加载股东动态（后台慢查询）
                     setTimeout(() => fetchShareholderActivity(), 200);
-                    // 第五步：加载感悟数据
+                    // 第五步：延迟加载双五模块（后台慢查询）
+                    setTimeout(() => fetchDoubleFiveStocks(), 300);
+                    // 第六步：加载感悟数据
                     fetchInsights();
-                    // 第六步：加载历史记录
+                    // 第七步：加载历史记录
                     fetchHistory();
                     // 添加全局拖拽事件监听
                     document.addEventListener('mousemove', handleResize);
@@ -2959,7 +2952,6 @@
                     insights,
                     loadStockList,
                     fetchPrices,
-                    fetchData,
                     sendMessage,
                     handleAutoRefreshChange,
                     fetchHistory,

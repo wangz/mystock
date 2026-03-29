@@ -3,7 +3,7 @@
 name: my-stock
 description: MyStock - 我的股票智能助手。Use when user asks about stock quotes, market analysis, limit-up tracking, shareholder dynamics, investment research, or portfolio management. Handles real-time prices, technical analysis, and financial data queries.
 metadata:
-version: 1.1.1
+version: 1.1.5
 author: wangz
 license: MIT
 category: finance

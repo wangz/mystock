@@ -970,8 +970,8 @@ def get_shareholder_activity():
 @app.get("/api/double-five-stocks")
 def get_double_five_stocks():
     """
-    获取"双五"股票（PE<6 且 股息率>4%）
-    双五指：PE接近5，股息率接近5%
+    获取"双五"股票（PE<8 且 股息率>4%）
+    双五指：PE接近8，股息率接近4%
     """
     try:
         import pywencai
@@ -1002,12 +1002,12 @@ def get_double_five_stocks():
             return new_record
 
         # 查询双五股票
-        df = pywencai.get(query='PE>0,PE<6,股息率>4', loop=True, max_retries=2)
+        df = pywencai.get(query='PE>0,PE<8,股息率>4', loop=True, max_retries=2)
 
         result = {
             'timestamp': datetime.now().isoformat(),
-            'condition': 'PE<6 且 股息率>4%',
-            'description': 'PE接近5，股息率接近5%',
+            'condition': 'PE<8 且 股息率>4%',
+            'description': 'PE接近8，股息率接近4%',
             'total': 0,
             'items': []
         }
