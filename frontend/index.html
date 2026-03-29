@@ -2267,7 +2267,7 @@
                     }
                 };
 
-                // 获取实时价格 - 并行获取 + 分批显示
+                // 获取实时价格 - 批量获取，直接更新
                 const fetchPrices = async () => {
                     priceLoading.value = true;
                     const now = new Date();
@@ -2277,55 +2277,15 @@
                         second: '2-digit'
                     });
 
-                    updateProgress.value = '正在获取数据...';
-
                     // 并行获取所有数据（使用批量API）
                     const [portfolioRes, watchlistRes] = await Promise.all([
                         fetchJson(`${API_BASE}/api/portfolio`),
                         fetchJson(`${API_BASE}/api/watchlist`)
                     ]);
 
-                    const newPortfolio = portfolioRes.portfolio || [];
-                    const newWatchlist = watchlistRes.watchlist || [];
+                    portfolio.value = portfolioRes.portfolio || [];
+                    watchlist.value = watchlistRes.watchlist || [];
 
-                    // 分批更新持仓（每批3只，间隔100ms）
-                    const batchSize = 3;
-                    for (let i = 0; i < newPortfolio.length; i += batchSize) {
-                        const batch = newPortfolio.slice(i, i + batchSize);
-                        updateProgress.value = `更新持仓 ${Math.min(i + batchSize, newPortfolio.length)}/${newPortfolio.length}`;
-
-                        // 更新这批数据
-                        batch.forEach(data => {
-                            const index = portfolio.value.findIndex(s => s.code === data.code);
-                            if (index !== -1) {
-                                portfolio.value[index] = { ...portfolio.value[index], ...data };
-                            }
-                        });
-
-                        // 如果不是最后一批，等待一小段时间让UI更新
-                        if (i + batchSize < newPortfolio.length) {
-                            await new Promise(resolve => setTimeout(resolve, 100));
-                        }
-                    }
-
-                    // 分批更新观察列表
-                    for (let i = 0; i < newWatchlist.length; i += batchSize) {
-                        const batch = newWatchlist.slice(i, i + batchSize);
-                        updateProgress.value = `更新观察 ${Math.min(i + batchSize, newWatchlist.length)}/${newWatchlist.length}`;
-
-                        batch.forEach(data => {
-                            const index = watchlist.value.findIndex(s => s.code === data.code);
-                            if (index !== -1) {
-                                watchlist.value[index] = { ...watchlist.value[index], ...data };
-                            }
-                        });
-
-                        if (i + batchSize < newWatchlist.length) {
-                            await new Promise(resolve => setTimeout(resolve, 100));
-                        }
-                    }
-
-                    updateProgress.value = '';
                     priceLoading.value = false;
                 };
 
@@ -2907,10 +2867,10 @@
                     await loadStockList();
                     // 第二步：异步获取实时价格
                     fetchPrices();
-                    // 第三步：加载打板分析数据
-                    fetchLimitUpAnalysis();
-                    // 第四步：静默加载股东动态数据（后台自动刷新）
-                    fetchShareholderActivity();
+                    // 第三步：延迟加载打板分析（后台慢查询）
+                    setTimeout(() => fetchLimitUpAnalysis(), 100);
+                    // 第四步：延迟加载股东动态（后台慢查询）
+                    setTimeout(() => fetchShareholderActivity(), 200);
                     // 第五步：加载感悟数据
                     fetchInsights();
                     // 第六步：加载历史记录

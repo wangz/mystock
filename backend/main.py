@@ -178,16 +178,19 @@ def get_stocks_data_batch(stocks: list) -> dict:
                 data = response.text
 
             for line in data.strip().split(';'):
+                line = line.strip()  # 去掉前后空白
                 if not line or '=' not in line:
                     continue
 
                 try:
+                    # 从 v_sh600519 提取代码
                     code_part = line.split('="')[0].replace('v_', '')
                     parts = line.split('="')[1].rstrip('";')
                     fields = parts.split('~')
 
                     if len(fields) > 32:
-                        code = fields[2] if len(fields) > 2 else code_part
+                        # 使用 code_part（如 sh600519）而不是 fields[2]（600519）
+                        code = code_part
                         current_price = float(fields[3])
                         previous_close = float(fields[4])
                         change = float(fields[31])
@@ -212,18 +215,17 @@ def get_stocks_data_batch(stocks: list) -> dict:
         return {}
 
 
-async def fetch_stock_data_async(ticker: str, code: str):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, get_stock_data, ticker, code)
+def fetch_stock_data_async(ticker: str, code: str):
+    return get_stock_data(ticker, code)
 
 # API 路由
 @app.get("/")
-async def root():
+def root():
     return {"message": "MyStock API", "version": "1.0.0"}
 
 # 获取所有数据
 @app.get("/api/data", response_model=PortfolioResponse)
-async def get_all_data():
+def get_all_data():
     return load_data()
 
 # 获取股票列表（快速返回，不调用外部API）
@@ -238,7 +240,7 @@ def load_memos():
     return {}
 
 @app.get("/api/stock-list")
-async def get_stock_list():
+def get_stock_list():
     data = load_data()
     portfolio = data.get('portfolio', [])
     watchlist = data.get('watchlist', [])
@@ -284,13 +286,12 @@ async def get_stock_list():
     }
 
 # 异步获取单只股票数据
-async def fetch_stock_data_async(ticker: str, code: str):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, get_stock_data, ticker, code)
+def fetch_stock_data_async(ticker: str, code: str):
+    return get_stock_data(ticker, code)
 
 # 获取持仓列表（带实时数据）- 批量获取
 @app.get("/api/portfolio")
-async def get_portfolio():
+def get_portfolio():
     import time
     timings = {}
 
@@ -315,9 +316,7 @@ async def get_portfolio():
             })
 
     # 批量获取所有股票数据（一次性请求）
-    stocks_data = await asyncio.get_event_loop().run_in_executor(
-        None, get_stocks_data_batch, stocks_to_fetch
-    )
+    stocks_data = get_stocks_data_batch(stocks_to_fetch)
     timings['fetch_stock_data'] = f"{(time.time()-t2)*1000:.1f}ms ({len(stocks_to_fetch)} 只股票)"
 
     # 构建结果列表
@@ -350,7 +349,7 @@ async def get_portfolio():
 
 # 获取股票的ROE数据
 @app.get("/api/roe-data/{code}")
-async def get_stock_roe(code: str):
+def get_stock_roe(code: str):
     """获取股票的ROE数据"""
     try:
         roe_data = get_roe_data(code)
@@ -367,7 +366,7 @@ async def get_stock_roe(code: str):
 
 # 获取观察列表（带实时数据）- 批量获取
 @app.get("/api/watchlist")
-async def get_watchlist():
+def get_watchlist():
     import time
     timings = {}
 
@@ -392,9 +391,7 @@ async def get_watchlist():
             })
 
     # 批量获取所有股票数据（一次性请求）
-    stocks_data = await asyncio.get_event_loop().run_in_executor(
-        None, get_stocks_data_batch, stocks_to_fetch
-    )
+    stocks_data = get_stocks_data_batch(stocks_to_fetch)
     timings['fetch_stock_data'] = f"{(time.time()-t2)*1000:.1f}ms ({len(stocks_to_fetch)} 只股票)"
 
     # 构建结果列表
@@ -427,7 +424,7 @@ async def get_watchlist():
 
 # 添加持仓
 @app.post("/api/portfolio/{ticker}")
-async def add_portfolio(ticker: str):
+def add_portfolio(ticker: str):
     data = load_data()
     stock_codes = load_stock_codes()
 
@@ -443,7 +440,7 @@ async def add_portfolio(ticker: str):
 
 # 移除持仓
 @app.delete("/api/portfolio/{ticker}")
-async def remove_portfolio(ticker: str):
+def remove_portfolio(ticker: str):
     data = load_data()
     portfolio = data.get('portfolio', [])
 
@@ -457,7 +454,7 @@ async def remove_portfolio(ticker: str):
 
 # 添加观察列表
 @app.post("/api/watchlist/{ticker}")
-async def add_watchlist(ticker: str):
+def add_watchlist(ticker: str):
     data = load_data()
     stock_codes = load_stock_codes()
 
@@ -473,7 +470,7 @@ async def add_watchlist(ticker: str):
 
 # 移除观察列表
 @app.delete("/api/watchlist/{ticker}")
-async def remove_watchlist(ticker: str):
+def remove_watchlist(ticker: str):
     data = load_data()
     watchlist = data.get('watchlist', [])
 
@@ -487,7 +484,7 @@ async def remove_watchlist(ticker: str):
 
 # 添加股票代码映射
 @app.post("/api/stocks/{ticker}")
-async def add_stock_code(ticker: str, code: str):
+def add_stock_code(ticker: str, code: str):
     data = load_data()
     stock_codes = load_stock_codes()
 
@@ -499,7 +496,7 @@ async def add_stock_code(ticker: str, code: str):
 
 # 批量添加股票
 @app.post("/api/stocks/batch")
-async def batch_add_stocks(stocks: List[dict]):
+def batch_add_stocks(stocks: List[dict]):
     data = load_data()
     stock_codes = load_stock_codes()
     portfolio = data.get('portfolio', [])
@@ -522,7 +519,7 @@ async def batch_add_stocks(stocks: List[dict]):
 
 # 智能对话
 @app.post("/api/chat")
-async def chat(request: ChatRequest):
+def chat(request: ChatRequest):
     # 获取用户数据
     data = load_data()
     portfolio = data.get('portfolio', [])
@@ -549,7 +546,8 @@ async def chat(request: ChatRequest):
     full_message = f"{request.message}\n\n{context_info}" if context_info else request.message
 
     # 调用 AI 服务
-    response = await AI_SERVICE.chat(full_message, request.history)
+    import asyncio
+    response = asyncio.run(AI_SERVICE.chat(full_message, request.history))
 
     return {
         "response": response,
@@ -559,7 +557,7 @@ async def chat(request: ChatRequest):
 
 # 感悟管理
 @app.get("/api/insights")
-async def get_insights():
+def get_insights():
     """获取所有感悟"""
     data = load_data()
     insights = data.get('insights', [])
@@ -569,7 +567,7 @@ async def get_insights():
     }
 
 @app.post("/api/insights")
-async def add_insight(insight: dict):
+def add_insight(insight: dict):
     """添加感悟"""
     data = load_data()
     insights = data.get('insights', [])
@@ -590,7 +588,7 @@ async def add_insight(insight: dict):
     }
 
 @app.delete("/api/insights/{index}")
-async def delete_insight(index: int):
+def delete_insight(index: int):
     """删除感悟"""
     data = load_data()
     insights = data.get('insights', [])
@@ -609,7 +607,7 @@ async def delete_insight(index: int):
 
 # 保存股票排序
 @app.post("/api/stock-order/{list_name}")
-async def save_stock_order(list_name: str, order_data: dict):
+def save_stock_order(list_name: str, order_data: dict):
     """保存股票排序"""
     if list_name not in ['portfolio', 'watchlist']:
         raise HTTPException(status_code=400, detail="无效的列表名称")
@@ -627,7 +625,7 @@ async def save_stock_order(list_name: str, order_data: dict):
 
 # 添加到历史记录
 @app.post("/api/stock-history")
-async def add_to_history(stock_data: dict):
+def add_to_history(stock_data: dict):
     """添加删除的股票到历史记录"""
     data = load_data()
     history = data.get('history', [])
@@ -660,7 +658,7 @@ async def add_to_history(stock_data: dict):
 
 # 获取历史记录
 @app.get("/api/stock-history")
-async def get_history():
+def get_history():
     """获取删除历史"""
     data = load_data()
     history = data.get('history', [])
@@ -668,7 +666,7 @@ async def get_history():
 
 # 恢复股票
 @app.post("/api/stock-restore")
-async def restore_stock(restore_data: dict):
+def restore_stock(restore_data: dict):
     """恢复删除的股票"""
     data = load_data()
     name = restore_data.get('name')
@@ -700,7 +698,7 @@ async def restore_stock(restore_data: dict):
 
 # 删除历史记录
 @app.delete("/api/stock-history/{index}")
-async def delete_history(index: int):
+def delete_history(index: int):
     """删除历史记录"""
     data = load_data()
     history = data.get('history', [])
@@ -715,7 +713,7 @@ async def delete_history(index: int):
 
 # 保存股票备忘
 @app.post("/api/stock-memo")
-async def save_memo(memo_data: dict):
+def save_memo(memo_data: dict):
     """保存股票备忘"""
     name = memo_data.get('name')
     code = memo_data.get('code')
@@ -752,7 +750,7 @@ async def save_memo(memo_data: dict):
 
 # 获取所有备忘
 @app.get("/api/stock-memo")
-async def get_memos():
+def get_memos():
     """获取所有股票备忘"""
     try:
         if os.path.exists(MEMOS_FILE):
@@ -767,7 +765,7 @@ async def get_memos():
 
 # 获取所有股票代码
 @app.get("/api/all-stock-codes")
-async def get_all_stock_codes():
+def get_all_stock_codes():
     """获取所有已知的股票代码"""
     data = load_data()
     stock_codes = load_stock_codes()
@@ -775,7 +773,7 @@ async def get_all_stock_codes():
 
 # 搜索股票
 @app.get("/api/search-stock")
-async def search_stock(keyword: str):
+def search_stock(keyword: str):
     """搜索股票（后端备用，实际由前端直接调用）"""
     try:
         url = "https://searchapi.eastmoney.com/api/suggest/get"
@@ -788,9 +786,8 @@ async def search_stock(keyword: str):
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, params=params, headers=headers, timeout=10.0)
-            text = response.text
+        response = httpx.get(url, params=params, headers=headers, timeout=10.0)
+        text = response.text
 
         results = []
         try:
@@ -814,7 +811,7 @@ async def search_stock(keyword: str):
 
 # 添加股票
 @app.post("/api/add-stock")
-async def add_stock(stock_data: dict):
+def add_stock(stock_data: dict):
     """添加股票到持仓或观察"""
     data = load_data()
     name = stock_data.get('name')
@@ -845,7 +842,7 @@ async def add_stock(stock_data: dict):
 
 # 获取单个股票数据
 @app.get("/api/stocks/{ticker}")
-async def get_single_stock(ticker: str):
+def get_single_stock(ticker: str):
     data = load_data()
     stock_codes = load_stock_codes()
 
@@ -860,7 +857,7 @@ async def get_single_stock(ticker: str):
     return stock_info
 
 @app.get("/api/limit-up-analysis")
-async def get_limit_up_analysis():
+def get_limit_up_analysis():
     """
     获取涨停板分析报告（使用问财数据）
     包括：
@@ -873,7 +870,7 @@ async def get_limit_up_analysis():
     return analysis
 
 @app.get("/api/shareholder-activity")
-async def get_shareholder_activity():
+def get_shareholder_activity():
     """
     获取股东动态数据（增持、回购）
     包括：
@@ -971,7 +968,7 @@ async def get_shareholder_activity():
         return {'error': str(e)}
 
 @app.get("/api/double-five-stocks")
-async def get_double_five_stocks():
+def get_double_five_stocks():
     """
     获取"双五"股票（PE<6 且 股息率>4%）
     双五指：PE接近5，股息率接近5%
