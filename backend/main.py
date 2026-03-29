@@ -28,6 +28,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_FILE = os.path.join(BASE_DIR, "portfolio_data.json")
 STOCK_CODES_FILE = os.path.join(BASE_DIR, "stock_codes.json")
+MEMOS_FILE = os.path.join(BASE_DIR, "memos.json")
 
 def load_stock_codes():
     """加载股票代码信息"""
@@ -534,12 +535,20 @@ async def delete_history(index: int):
 @app.post("/api/stock-memo")
 async def save_memo(memo_data: dict):
     """保存股票备忘"""
-    data = load_data()
     name = memo_data.get('name')
     code = memo_data.get('code')
     memo = memo_data.get('memo', '')
 
-    memos = data.get('memos', {})
+    # 加载现有备忘数据
+    try:
+        if os.path.exists(MEMOS_FILE):
+            with open(MEMOS_FILE, 'r', encoding='utf-8') as f:
+                memos = json.load(f)
+        else:
+            memos = {}
+    except Exception as e:
+        print(f"加载 memos 失败: {e}")
+        memos = {}
 
     if memo:
         memos[name] = {
@@ -550,16 +559,28 @@ async def save_memo(memo_data: dict):
     elif name in memos:
         del memos[name]
 
-    data['memos'] = memos
-    save_data(data)
+    # 保存数据到memos.json
+    try:
+        with open(MEMOS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(memos, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"保存 memos 失败: {e}")
+
     return {"success": True, "memos": memos}
 
 # 获取所有备忘
 @app.get("/api/stock-memo")
 async def get_memos():
     """获取所有股票备忘"""
-    data = load_data()
-    memos = data.get('memos', {})
+    try:
+        if os.path.exists(MEMOS_FILE):
+            with open(MEMOS_FILE, 'r', encoding='utf-8') as f:
+                memos = json.load(f)
+        else:
+            memos = {}
+    except Exception as e:
+        print(f"加载 memos 失败: {e}")
+        memos = {}
     return {"memos": memos}
 
 # 获取所有股票代码
