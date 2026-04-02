@@ -43,16 +43,17 @@
             box-sizing: border-box;
         }
 
-        body {
+        body, html {
             font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
             background: var(--bg-secondary);
             min-height: 100vh;
+            overflow-y: auto;
         }
 
         .app-container {
             display: flex;
             flex-direction: column;
-            height: 100vh;
+            min-height: 100vh;
             padding: 10px;
             gap: 10px;
         }
@@ -1101,7 +1102,7 @@
                     {{ isGrayscaleMode ? '🎨' : '⚪' }}
                 </button>
                 <el-button size="small" @click="showHistoryModal = true">
-                    🗑️ 回收站 {{ stockHistory.length > 0 ? `(${stockHistory.length})` : '' }}
+                    📦 归档 {{ stockHistory.length > 0 ? `(${stockHistory.length})` : '' }}
                 </el-button>
             </div>
         </div>
@@ -1132,7 +1133,7 @@
                         </thead>
                         <tbody>
                             <tr v-for="(stock, index) in portfolio" :key="stock.ticker" class="stock-row" :class="{ 'highlight-stock': Math.abs(stock.change_percent) >= 3 && stock.price !== null }">
-                                <td :style="Math.abs(stock.change_percent) >= 3 && stock.price !== null ? 'font-weight: 700;' : 'font-weight: 400;'">
+                                <td :style="Math.abs(stock.change_percent) >= 3 && stock.price !== null ? 'font-weight: 700; cursor: pointer;' : 'font-weight: 400; cursor: pointer;'" @click="fetchStockDetail(stock.code)">
                                     {{ stock.name }}
                                 </td>
                                 <td style="text-align: right;" :style="Math.abs(stock.change_percent) >= 3 && stock.price !== null ? 'font-weight: 700;' : 'font-weight: 400;'" :class="{ 'loading-price': stock.price === null }">
@@ -1183,7 +1184,7 @@
                         </thead>
                         <tbody>
                             <tr v-for="(stock, index) in watchlist" :key="stock.ticker" class="stock-row" :class="{ 'highlight-stock': Math.abs(stock.change_percent) >= 3 && stock.price !== null }">
-                                <td :style="Math.abs(stock.change_percent) >= 3 && stock.price !== null ? 'font-weight: 700;' : 'font-weight: 400;'">
+                                <td :style="Math.abs(stock.change_percent) >= 3 && stock.price !== null ? 'font-weight: 700; cursor: pointer;' : 'font-weight: 400; cursor: pointer;'" @click="fetchStockDetail(stock.code)">
                                     {{ stock.name }}
                                 </td>
                                 <td style="text-align: right;" :style="Math.abs(stock.change_percent) >= 3 && stock.price !== null ? 'font-weight: 700;' : 'font-weight: 400;'" :class="{ 'loading-price': stock.price === null }">
@@ -1294,6 +1295,7 @@
                             <el-radio-button label="limitup">📊 打板分析</el-radio-button>
                             <el-radio-button label="shareholder">💰 股东动态</el-radio-button>
                             <el-radio-button label="doublefive">🎯 双五</el-radio-button>
+                            <el-radio-button label="r15">📈 R15</el-radio-button>
                         </el-radio-group>
                         <div style="margin-left: auto; display: flex; gap: 8px;">
                             <el-button size="small" @click="showLimitUpDetail = true" :disabled="!limitUpAnalysis" v-if="activeAnalysisTab === 'limitup'">
@@ -1305,7 +1307,10 @@
                             <el-button size="small" @click="showDoubleFiveDetail = true" :disabled="!doubleFiveStocks" v-if="activeAnalysisTab === 'doublefive'">
                                 详情
                             </el-button>
-                            <el-button size="small" @click="handleRefresh" :loading="activeAnalysisTab === 'limitup' ? limitUpLoading : (activeAnalysisTab === 'shareholder' ? shareholderLoading : doubleFiveLoading)">
+                            <el-button size="small" @click="showR15Detail = true" :disabled="!r15Stocks" v-if="activeAnalysisTab === 'r15'">
+                                详情
+                            </el-button>
+                            <el-button size="small" @click="handleRefresh" :loading="activeAnalysisTab === 'limitup' ? limitUpLoading : (activeAnalysisTab === 'shareholder' ? shareholderLoading : (activeAnalysisTab === 'doublefive' ? doubleFiveLoading : r15Loading))">
                                 刷新
                             </el-button>
                         </div>
@@ -1397,8 +1402,8 @@
                                 <div class="shareholder-list-compact">
                                     <div v-for="(item, idx) in doubleFiveStocks.items?.slice(0, 5)" :key="idx" class="shareholder-item-compact">
                                         <span class="shareholder-name">{{ item['股票简称'] }}</span>
-                                        <span style="color: #67C23A; font-weight: 600;">PE: {{ typeof item['市盈率(pe)'] === 'number' ? item['市盈率(pe)'].toFixed(2) : '-' }}</span>
-                                        <span style="color: #E6A23C; font-weight: 600;">股息: {{ typeof item['股息率(近12个月)'] === 'number' ? item['股息率(近12个月)'].toFixed(2) : '-' }}%</span>
+                                        <span style="color: #67C23A; font-weight: 600;">PE: {{ Number(item['市盈率(pe)']) ? Number(item['市盈率(pe)']).toFixed(2) : '-' }}</span>
+                                        <span style="color: #E6A23C; font-weight: 600;">股息: {{ Number(item['股息率(近12个月)']) ? Number(item['股息率(近12个月)']).toFixed(2) : '-' }}%</span>
                                     </div>
                                 </div>
                             </div>
@@ -1408,6 +1413,31 @@
                         </div>
                         <div v-else style="text-align: center; padding: 20px; color: #909399;">
                             点击右侧刷新按钮获取双五股票数据
+                        </div>
+                    </div>
+
+                    <!-- R15内容 -->
+                    <div class="analysis-content" v-if="activeAnalysisTab === 'r15'">
+                        <div v-if="r15Stocks" class="shareholder-content">
+                            <div class="shareholder-section">
+                                <div class="shareholder-section-title">📈 R15 股票 ({{ r15Stocks.total || 0 }}只)</div>
+                                <div style="margin-bottom: 12px; color: #606266; font-size: 13px;">
+                                    条件：10年平均ROE&gt;15% 且 最低年份ROE&gt;14%
+                                </div>
+                                <div class="shareholder-list-compact">
+                                    <div v-for="(item, idx) in r15Stocks.items?.slice(0, 10)" :key="idx" class="shareholder-item-compact">
+                                        <span class="shareholder-name">{{ item.name }}</span>
+                                        <span style="color: #67C23A; font-weight: 600;">10年均: {{ item.avg_roe_10y }}%</span>
+                                        <span style="color: #E6A23C; font-weight: 600;">最低: {{ item.min_roe_10y }}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else-if="r15Loading" style="text-align: center; padding: 20px; color: #909399;">
+                            正在加载R15数据...
+                        </div>
+                        <div v-else style="text-align: center; padding: 20px; color: #909399;">
+                            点击右侧刷新按钮获取R15数据
                         </div>
                     </div>
                 </div>
@@ -1446,7 +1476,7 @@
 
         <el-dialog
             v-model="showHistoryModal"
-            title="🗑️ 回收站"
+            title="📦 归档"
             width="500px"
         >
             <div v-if="loadingHistory" style="text-align: center; padding: 40px; color: #909399;">
@@ -1851,14 +1881,14 @@
                     <el-table-column label="市盈率(PE)" width="100">
                         <template #default="{ row }">
                             <span style="color: #409eff; font-weight: 600;">
-                                {{ typeof row['市盈率(pe)'] === 'number' ? row['市盈率(pe)'].toFixed(2) : '-' }}
+                                {{ Number(row['市盈率(pe)']) ? Number(row['市盈率(pe)']).toFixed(2) : '-' }}
                             </span>
                         </template>
                     </el-table-column>
                     <el-table-column label="股息率(%)" width="100">
                         <template #default="{ row }">
                             <span style="color: #e6a23c; font-weight: 600;">
-                                {{ typeof row['股息率(近12个月)'] === 'number' ? row['股息率(近12个月)'].toFixed(2) : '-' }}%
+                                {{ Number(row['股息率(近12个月)']) ? Number(row['股息率(近12个月)']).toFixed(2) : '-' }}%
                             </span>
                         </template>
                     </el-table-column>
@@ -1881,6 +1911,75 @@
                 </el-pagination>
             </div>
             <div v-else-if="doubleFiveLoading" style="text-align: center; padding: 40px; color: #909399;">
+                <div style="margin-top: 16px;">正在加载数据，请稍候...</div>
+            </div>
+            <div v-else style="text-align: center; padding: 40px;">
+                <el-empty description="暂无数据，请先点击刷新获取数据" />
+            </div>
+        </el-dialog>
+
+        <!-- R15详情弹窗 -->
+        <el-dialog
+            v-model="showR15Detail"
+            title="📈 R15 股票详情"
+            width="900px"
+            top="5vh"
+        >
+            <div v-if="r15Stocks" style="margin-bottom: 15px;">
+                <div style="font-size: 14px; color: #606266; margin-bottom: 10px;">
+                    <strong>筛选条件：</strong>10年平均ROE &gt; 15% 且 最低年份ROE &gt; 14%
+                </div>
+                <div style="font-size: 14px; color: #909399; margin-bottom: 15px;">
+                    共 {{ r15Stocks.total }} 只股票 | 更新时间：{{ r15Stocks.timestamp }}
+                </div>
+
+                <el-table :data="r15List" stripe size="small" max-height="500" style="width: 100%;">
+                    <el-table-column label="序号" width="60" align="center">
+                        <template #default="{ $index }">
+                            {{ (r15Page - 1) * pageSize + $index + 1 }}
+                        </template>
+                    </el-table-column>
+                    <el-table-column prop="name" label="股票" min-width="120">
+                        <template #default="{ row }">
+                            <span class="stock-name-link" @click="addStockSearch = row.name; showAddStockModal = true; addStockTarget = 'watchlist'">
+                                {{ row.name }}
+                            </span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column prop="code" label="代码" width="100" />
+                    <el-table-column label="10年平均" width="100">
+                        <template #default="{ row }">
+                            <span style="color: #67c23a; font-weight: 600;">{{ row.avg_roe_10y }}%</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="5年平均" width="100">
+                        <template #default="{ row }">
+                            <span style="color: #409eff; font-weight: 600;">{{ row.avg_roe_5y || '-' }}%</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="最新ROE" width="100">
+                        <template #default="{ row }">
+                            <span style="color: #e6a23c; font-weight: 600;">{{ row.roe_latest }}%</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="最低年份" width="100">
+                        <template #default="{ row }">
+                            <span style="color: #f56c6c; font-weight: 600;">{{ row.min_roe_10y }}%</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column prop="years_count" label="有效年数" width="80" />
+                </el-table>
+
+                <el-pagination
+                    v-model:current-page="r15Page"
+                    :page-size="pageSize"
+                    :total="r15Stocks.total || 0"
+                    layout="prev, pager, next"
+                    small
+                    style="margin-top: 15px; text-align: center;">
+                </el-pagination>
+            </div>
+            <div v-else-if="r15Loading" style="text-align: center; padding: 40px; color: #909399;">
                 <div style="margin-top: 16px;">正在加载数据，请稍候...</div>
             </div>
             <div v-else style="text-align: center; padding: 40px;">
@@ -1940,6 +2039,69 @@
                 <el-button type="primary" @click="confirmAddStock" :disabled="!selectedStock">确认添加</el-button>
             </template>
         </el-dialog>
+
+        <!-- 股票详情弹窗 -->
+        <el-dialog
+            v-model="showStockDetailModal"
+            :title="stockDetail ? `${stockDetail.name} (${stockDetail.code})` : '股票详情'"
+            width="700px"
+            top="5vh"
+        >
+            <div v-if="stockDetailLoading" style="text-align: center; padding: 40px; color: #909399;">
+                正在加载股票详情...
+            </div>
+            <div v-else-if="stockDetail">
+                <!-- ROE 核心指标 -->
+                <div style="margin-bottom: 20px;">
+                    <div style="font-weight: bold; margin-bottom: 10px; color: #303133;">📊 ROE 核心指标</div>
+                    <el-row :gutter="12">
+                        <el-col :span="6">
+                            <div style="background: #f5f7fa; padding: 12px; border-radius: 4px; text-align: center;">
+                                <div style="color: #909399; font-size: 12px;">10年平均</div>
+                                <div style="color: #67c23a; font-size: 20px; font-weight: bold;">{{ stockDetail.avg_roe_10y || '-' }}%</div>
+                            </div>
+                        </el-col>
+                        <el-col :span="6">
+                            <div style="background: #f5f7fa; padding: 12px; border-radius: 4px; text-align: center;">
+                                <div style="color: #909399; font-size: 12px;">5年平均</div>
+                                <div style="color: #409eff; font-size: 20px; font-weight: bold;">{{ stockDetail.avg_roe_5y || '-' }}%</div>
+                            </div>
+                        </el-col>
+                        <el-col :span="6">
+                            <div style="background: #f5f7fa; padding: 12px; border-radius: 4px; text-align: center;">
+                                <div style="color: #909399; font-size: 12px;">最新ROE</div>
+                                <div style="color: #e6a23c; font-size: 20px; font-weight: bold;">{{ stockDetail.roe_latest || '-' }}%</div>
+                            </div>
+                        </el-col>
+                        <el-col :span="6">
+                            <div style="background: #f5f7fa; padding: 12px; border-radius: 4px; text-align: center;">
+                                <div style="color: #909399; font-size: 12px;">最低年份</div>
+                                <div style="color: #f56c6c; font-size: 20px; font-weight: bold;">{{ stockDetail.min_roe_year || '-' }} ({{ stockDetail.min_roe || '-' }}%)</div>
+                            </div>
+                        </el-col>
+                    </el-row>
+                </div>
+
+                <!-- ROE 历史趋势图 -->
+                <div style="margin-bottom: 20px;">
+                    <div style="font-weight: bold; margin-bottom: 10px; color: #303133;">📈 ROE 历史趋势</div>
+                    <div id="stock-detail-chart" style="width: 100%; height: 250px;"></div>
+                </div>
+
+                <!-- 股票基本信息 -->
+                <div style="margin-bottom: 10px;">
+                    <div style="font-weight: bold; margin-bottom: 10px; color: #303133;">📋 基本信息</div>
+                    <div style="color: #606266; font-size: 13px;">
+                        <span v-if="stockDetail.industry">行业：{{ stockDetail.aliases || '-' }}</span>
+                        <span v-if="stockDetail.years_count"> | 有效ROE年份：{{ stockDetail.years_count }} 年</span>
+                    </div>
+                </div>
+
+            </div>
+            <div v-else style="text-align: center; padding: 40px; color: #909399;">
+                暂无数据
+            </div>
+        </el-dialog>
     </div>
 
     <!-- ============================================================
@@ -1964,6 +2126,7 @@
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://unpkg.com/@element-plus/icons-vue"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/echarts@5.4.3/dist/echarts.min.js"></script>
 
     <script>
         const { createApp, ref, computed, onMounted, onUnmounted, nextTick } = Vue;
@@ -2004,6 +2167,20 @@
                     }
                     const start = (doubleFivePage.value - 1) * pageSize;
                     return doubleFiveStocks.value.items.slice(start, start + pageSize);
+                });
+
+                // R15股票数据
+                const r15Stocks = ref(null);
+                const r15Loading = ref(false);
+                const showR15Detail = ref(false);
+                const r15Page = ref(1);
+
+                const r15List = computed(() => {
+                    if (!r15Stocks.value?.items) {
+                        return [];
+                    }
+                    const start = (r15Page.value - 1) * pageSize;
+                    return r15Stocks.value.items.slice(start, start + pageSize);
                 });
                 
                 const shareholdingList = computed(() => {
@@ -2059,6 +2236,12 @@
                 const addStockTitle = computed(() => {
                     return addStockTarget.value === 'portfolio' ? '➕ 添加到持仓' : '➕ 添加到观察';
                 });
+
+                // 股票详情弹窗
+                const showStockDetailModal = ref(false);
+                const stockDetail = ref(null);
+                const stockDetailLoading = ref(false);
+                let stockDetailChart = null;
 
                 // 获取所有备忘（计算属性）
                 const allMemos = computed(() => {
@@ -2300,6 +2483,56 @@
                     });
 
                     priceLoading.value = false;
+                };
+
+                // 股票详情
+                const fetchStockDetail = async (code) => {
+                    showStockDetailModal.value = true;
+                    stockDetailLoading.value = true;
+                    try {
+                        const response = await fetch(`${API_BASE}/api/stock-detail/${code}`);
+                        const data = await response.json();
+                        stockDetail.value = data;
+                        // 渲染图表
+                        setTimeout(() => renderStockDetailChart(), 100);
+                    } catch (error) {
+                        console.error('获取股票详情失败:', error);
+                        stockDetail.value = null;
+                    } finally {
+                        stockDetailLoading.value = false;
+                    }
+                };
+
+                const renderStockDetailChart = () => {
+                    if (!stockDetail.value?.roe_history?.length) return;
+                    const chartDom = document.getElementById('stock-detail-chart');
+                    if (!chartDom) return;
+                    if (stockDetailChart) {
+                        stockDetailChart.dispose();
+                    }
+                    stockDetailChart = echarts.init(chartDom);
+                    const history = stockDetail.value.roe_history.slice().reverse();
+                    const years = history.map(h => h.year);
+                    const roes = history.map(h => h.roe || 0);
+                    const option = {
+                        tooltip: { trigger: 'axis' },
+                        grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+                        xAxis: { type: 'category', data: years },
+                        yAxis: { type: 'value', axisLabel: { formatter: '{value}%' } },
+                        series: [{
+                            data: roes,
+                            type: 'bar',
+                            itemStyle: {
+                                color: (params) => {
+                                    if (params.value >= 15) return '#67c23a';
+                                    if (params.value >= 10) return '#409eff';
+                                    return '#f56c6c';
+                                }
+                            },
+                            label: { show: true, position: 'top', formatter: '{c}%' }
+                        }]
+                    };
+                    stockDetailChart.setOption(option);
                 };
 
                 // 感悟管理
@@ -2722,6 +2955,8 @@
                 const handleAnalysisTabChange = (tabName) => {
                     if (tabName === 'shareholder' && !shareholderActivity.value) {
                         fetchShareholderActivity();
+                    } else if (tabName === 'r15' && !r15Stocks.value) {
+                        fetchR15Stocks();
                     }
                 };
 
@@ -2733,6 +2968,8 @@
                         fetchShareholderActivity();
                     } else if (activeAnalysisTab.value === 'doublefive') {
                         fetchDoubleFiveStocks();
+                    } else if (activeAnalysisTab.value === 'r15') {
+                        fetchR15Stocks();
                     }
                 };
 
@@ -2747,6 +2984,20 @@
                         console.error('获取双五股票失败:', error);
                     } finally {
                         doubleFiveLoading.value = false;
+                    }
+                };
+
+                // 获取R15股票
+                const fetchR15Stocks = async () => {
+                    r15Loading.value = true;
+                    try {
+                        const response = await fetch(`${API_BASE}/api/r15-stocks`);
+                        const data = await response.json();
+                        r15Stocks.value = data;
+                    } catch (error) {
+                        console.error('获取R15股票失败:', error);
+                    } finally {
+                        r15Loading.value = false;
                     }
                 };
 
@@ -2864,9 +3115,11 @@
                     setTimeout(() => fetchShareholderActivity(), 200);
                     // 第五步：延迟加载双五模块（后台慢查询）
                     setTimeout(() => fetchDoubleFiveStocks(), 300);
-                    // 第六步：加载感悟数据
+                    // 第六步：延迟加载R15模块（后台慢查询）
+                    setTimeout(() => fetchR15Stocks(), 400);
+                    // 第七步：加载感悟数据
                     fetchInsights();
-                    // 第七步：加载历史记录
+                    // 第八步：加载历史记录
                     fetchHistory();
                     // 添加全局拖拽事件监听
                     document.addEventListener('mousemove', handleResize);
@@ -2890,6 +3143,10 @@
                     chatLoading,
                     lastUpdate,
                     priceLoading,
+                    showStockDetailModal,
+                    stockDetail,
+                    stockDetailLoading,
+                    fetchStockDetail,
                     updateProgress,
                     alertStocks,
                     autoRefresh,
@@ -2917,6 +3174,12 @@
                     doubleFiveList,
                     doubleFivePage,
                     fetchDoubleFiveStocks,
+                    r15Stocks,
+                    r15Loading,
+                    showR15Detail,
+                    r15List,
+                    r15Page,
+                    fetchR15Stocks,
                     handleTabChange,
                     handleRefresh,
                     handleAnalysisTabChange,

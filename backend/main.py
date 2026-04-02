@@ -1024,6 +1024,142 @@ def get_double_five_stocks():
         traceback.print_exc()
         return {'error': str(e)}
 
+
+@app.get("/api/r15-stocks")
+def get_r15_stocks():
+    """
+    获取 R15 股票
+    条件：近10年平均ROE > 15% 且 最低年份ROE > 10%
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+
+        # 查询满足条件的股票
+        cursor.execute('''
+            SELECT
+                s.code,
+                c.name,
+                s.avg_roe_10y,
+                s.avg_roe_5y,
+                s.roe_latest,
+                s.years_count,
+                (
+                    SELECT MIN(r2.roe)
+                    FROM roe_data r2
+                    WHERE r2.code = s.code
+                    AND r2.date LIKE '%1231'
+                    AND r2.date >= '20151231'
+                    AND r2.roe > 0 AND r2.roe < 100
+                ) as min_roe_10y
+            FROM stock_roe_summary s
+            LEFT JOIN stock_codes c ON s.code = c.code
+            WHERE s.avg_roe_10y > 15
+            AND s.years_count >= 8
+            AND (
+                SELECT MIN(r3.roe)
+                FROM roe_data r3
+                WHERE r3.code = s.code
+                AND r3.date LIKE '%1231'
+                AND r3.date >= '20151231'
+                AND r3.roe > 0 AND r3.roe < 100
+            ) > 14
+            ORDER BY s.avg_roe_10y DESC
+        ''')
+
+        items = []
+        for row in cursor.fetchall():
+            code, name, avg_10y, avg_5y, roe_latest, years_count, min_roe = row
+            items.append({
+                'code': code,
+                'name': name or '-',
+                'avg_roe_10y': round(avg_10y, 2) if avg_10y else None,
+                'avg_roe_5y': round(avg_5y, 2) if avg_5y else None,
+                'roe_latest': round(roe_latest, 2) if roe_latest else None,
+                'years_count': years_count,
+                'min_roe_10y': round(min_roe, 2) if min_roe else None
+            })
+
+        conn.close()
+
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'condition': '10年平均ROE>15% 且 最低年份ROE>10%',
+            'total': len(items),
+            'items': items
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {'error': str(e)}
+
+
+@app.get("/api/stock-detail/{code}")
+def get_stock_detail(code: str):
+    """
+    获取单只股票详情
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+
+        result = {'code': code}
+
+        # 1. 基本信息
+        cursor.execute('''
+            SELECT name, aliases FROM stock_codes WHERE code = ?
+        ''', (code,))
+        row = cursor.fetchone()
+        if row:
+            result['name'] = row[0]
+            result['aliases'] = row[1]
+
+        # 2. ROE 汇总
+        cursor.execute('''
+            SELECT avg_roe_10y, avg_roe_5y, roe_latest, years_count
+            FROM stock_roe_summary WHERE code = ?
+        ''', (code,))
+        row = cursor.fetchone()
+        if row:
+            result['avg_roe_10y'] = round(row[0], 2) if row[0] else None
+            result['avg_roe_5y'] = round(row[1], 2) if row[1] else None
+            result['roe_latest'] = round(row[2], 2) if row[2] else None
+            result['years_count'] = row[3]
+
+        # 3. ROE 历史
+        cursor.execute('''
+            SELECT date, roe FROM roe_data
+            WHERE code = ? AND date LIKE '%1231'
+            ORDER BY date DESC
+        ''', (code,))
+        roe_history = []
+        for row in cursor.fetchall():
+            roe_history.append({
+                'date': row[0],
+                'year': row[0][:4],
+                'roe': round(row[1], 2) if row[1] else None
+            })
+        result['roe_history'] = roe_history
+
+        # 4. 最低年份 ROE
+        if roe_history:
+            valid_roe = [r for r in roe_history if r['roe'] and 0 < r['roe'] < 100]
+            if valid_roe:
+                min_item = min(valid_roe, key=lambda x: x['roe'])
+                result['min_roe_year'] = min_item['year']
+                result['min_roe'] = min_item['roe']
+
+        conn.close()
+
+        return result
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {'error': str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
