@@ -7,7 +7,8 @@ import os
 import requests
 import httpx
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
+import akshare as ak
 
 from simple_limit_up import SimpleLimitUpAnalyzer
 from ai_service import AI_SERVICE, AI_CONFIG
@@ -1095,6 +1096,106 @@ def get_r15_stocks():
         return {'error': str(e)}
 
 
+def get_dividend_data(code: str, years: int = 10):
+    """
+    使用 akshare 获取股票历年分红明细及派息率
+    """
+    def to_native(val):
+        """将 numpy/pandas 类型转换为 Python 原生类型"""
+        import math
+        from datetime import date
+        if val is None:
+            return None
+        try:
+            if hasattr(val, 'item'):
+                val = val.item()
+            elif hasattr(val, 'tolist'):
+                val = val.tolist()
+            elif isinstance(val, date):
+                return val.strftime('%Y-%m-%d')
+            if isinstance(val, float):
+                if math.isnan(val) or math.isinf(val):
+                    return None
+            return val
+        except:
+            return None
+    
+    def get_stock_price(symbol: str, date_str: str):
+        """获取指定日期的收盘价"""
+        try:
+            if not date_str or len(date_str) < 8:
+                return None
+            clean_date = date_str.replace('-', '').replace('/', '')
+            if len(clean_date) != 8 or not clean_date.isdigit():
+                return None
+            df = ak.stock_zh_a_hist(symbol=symbol, period='daily', 
+                                   start_date=clean_date, end_date=clean_date, adjust='qfq')
+            if df is not None and len(df) > 0:
+                return to_native(df.iloc[0]['收盘'])
+        except:
+            pass
+        return None
+    
+    try:
+        stock_code = code.replace('.SH', '').replace('.SZ', '').replace('sh', '').replace('sz', '')
+        
+        df = ak.stock_history_dividend_detail(symbol=stock_code)
+        if df is None or len(df) == 0:
+            return []
+        
+        dividend_list = []
+        current_year = datetime.now().year
+        cutoff_year = current_year - years
+        
+        for _, row in df.iterrows():
+            progress = to_native(row.get('进度'))
+            if progress != '实施':
+                continue
+            
+            announce_date = to_native(row.get('公告日期'))
+            ex_div_date = to_native(row.get('除权除息日'))
+            cash_div = to_native(row.get('派息'))
+            
+            if not cash_div or cash_div <= 0:
+                continue
+            
+            year = 0
+            if ex_div_date:
+                try:
+                    year = int(str(ex_div_date)[:4])
+                except:
+                    pass
+            elif announce_date:
+                try:
+                    year = int(str(announce_date)[:4])
+                except:
+                    pass
+            
+            if year < cutoff_year:
+                continue
+            
+            dividend_yield = None
+            if ex_div_date and isinstance(ex_div_date, str) and len(ex_div_date) >= 8:
+                price = get_stock_price(stock_code, ex_div_date)
+                if price and price > 0:
+                    dividend_yield = round((cash_div / price) * 100, 2)
+            
+            dividend_list.append({
+                'announce_date': announce_date if announce_date else '',
+                'cash_div': round(cash_div, 2) if cash_div else 0,
+                'ex_div_date': ex_div_date if ex_div_date else '',
+                'progress': progress if progress else '',
+                'dividend_yield': dividend_yield
+            })
+        
+        return dividend_list
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return []
+
+
 @app.get("/api/stock-detail/{code}")
 def get_stock_detail(code: str):
     """
@@ -1106,7 +1207,6 @@ def get_stock_detail(code: str):
 
         result = {'code': code}
 
-        # 1. 基本信息
         cursor.execute('''
             SELECT name, aliases FROM stock_codes WHERE code = ?
         ''', (code,))
@@ -1115,7 +1215,6 @@ def get_stock_detail(code: str):
             result['name'] = row[0]
             result['aliases'] = row[1]
 
-        # 2. ROE 汇总
         cursor.execute('''
             SELECT avg_roe_10y, avg_roe_5y, roe_latest, years_count
             FROM stock_roe_summary WHERE code = ?
@@ -1127,7 +1226,6 @@ def get_stock_detail(code: str):
             result['roe_latest'] = round(row[2], 2) if row[2] else None
             result['years_count'] = row[3]
 
-        # 3. ROE 历史
         cursor.execute('''
             SELECT date, roe FROM roe_data
             WHERE code = ? AND date LIKE '%1231'
@@ -1142,13 +1240,15 @@ def get_stock_detail(code: str):
             })
         result['roe_history'] = roe_history
 
-        # 4. 最低年份 ROE
         if roe_history:
             valid_roe = [r for r in roe_history if r['roe'] and 0 < r['roe'] < 100]
             if valid_roe:
                 min_item = min(valid_roe, key=lambda x: x['roe'])
                 result['min_roe_year'] = min_item['year']
                 result['min_roe'] = min_item['roe']
+
+        dividend_list = get_dividend_data(code, years=10)
+        result['dividend_list'] = dividend_list
 
         conn.close()
 

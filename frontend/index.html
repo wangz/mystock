@@ -2088,6 +2088,35 @@
                     <div id="stock-detail-chart" style="width: 100%; height: 250px;"></div>
                 </div>
 
+                <!-- 分红情况 -->
+                <div style="margin-bottom: 20px;">
+                    <div style="font-weight: bold; margin-bottom: 10px; color: #303133;">💰 历年分红</div>
+                    <div id="dividend-chart" style="width: 100%; height: 200px; margin-bottom: 15px;"></div>
+                    <el-table 
+                        v-if="stockDetail.dividend_list && stockDetail.dividend_list.length > 0"
+                        :data="stockDetail.dividend_list.slice(0, 20)"
+                        size="small"
+                        border
+                        style="font-size: 12px;">
+                        <el-table-column prop="announce_date" label="公告日期" width="100"></el-table-column>
+                        <el-table-column label="每股派息" width="90">
+                            <template #default="{row}">{{ row.cash_div }}元</template>
+                        </el-table-column>
+                        <el-table-column prop="ex_div_date" label="除权除息日" width="110"></el-table-column>
+                        <el-table-column label="派息率">
+                            <template #default="{row}">
+                                <span :style="{color: row.dividend_yield && row.dividend_yield > 3 ? '#67c23a' : '#909399'}">
+                                    {{ row.dividend_yield ? row.dividend_yield + '%' : '-' }}
+                                </span>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="progress" label="进度" width="60"></el-table-column>
+                    </el-table>
+                    <div v-else style="color: #909399; font-size: 13px; padding: 10px; text-align: center;">
+                        暂无分红数据
+                    </div>
+                </div>
+
                 <!-- 股票基本信息 -->
                 <div style="margin-bottom: 10px;">
                     <div style="font-weight: bold; margin-bottom: 10px; color: #303133;">📋 基本信息</div>
@@ -2493,8 +2522,10 @@
                         const response = await fetch(`${API_BASE}/api/stock-detail/${code}`);
                         const data = await response.json();
                         stockDetail.value = data;
-                        // 渲染图表
-                        setTimeout(() => renderStockDetailChart(), 100);
+                        setTimeout(() => {
+                            renderStockDetailChart();
+                            renderDividendChart();
+                        }, 100);
                     } catch (error) {
                         console.error('获取股票详情失败:', error);
                         stockDetail.value = null;
@@ -2533,6 +2564,66 @@
                         }]
                     };
                     stockDetailChart.setOption(option);
+                };
+
+                const renderDividendChart = () => {
+                    if (!stockDetail.value?.dividend_list?.length) return;
+                    const chartDom = document.getElementById('dividend-chart');
+                    if (!chartDom) return;
+                    if (window.dividendChartInstance) {
+                        window.dividendChartInstance.dispose();
+                    }
+                    const data = stockDetail.value.dividend_list;
+                    
+                    const yearly = {};
+                    data.forEach(item => {
+                        const year = (item.ex_div_date || item.announce_date || '').substring(0, 4);
+                        if (!year || year.length !== 4) return;
+                        if (!yearly[year]) {
+                            yearly[year] = { total: 0, yields: [] };
+                        }
+                        yearly[year].total += item.cash_div || 0;
+                        if (item.dividend_yield) {
+                            yearly[year].yields.push(item.dividend_yield);
+                        }
+                    });
+                    
+                    const years = Object.keys(yearly).sort().reverse().slice(0, 10);
+                    const cashData = years.map(y => yearly[y].total.toFixed(2));
+                    const yieldData = years.map(y => {
+                        if (yearly[y].yields.length === 0) return null;
+                        const avg = yearly[y].yields.reduce((a, b) => a + b, 0) / yearly[y].yields.length;
+                        return parseFloat(avg.toFixed(2));
+                    });
+                    
+                    window.dividendChartInstance = echarts.init(chartDom);
+                    window.dividendChartInstance.setOption({
+                        tooltip: { trigger: 'axis' },
+                        legend: { data: ['每股分红', '派息率'], top: 0 },
+                        grid: { left: '3%', right: '4%', bottom: '3%', top: '30%', containLabel: true },
+                        xAxis: { type: 'category', data: years },
+                        yAxis: [
+                            { type: 'value', name: '元' },
+                            { type: 'value', name: '%' }
+                        ],
+                        series: [
+                            {
+                                name: '每股分红',
+                                type: 'bar',
+                                data: cashData,
+                                itemStyle: { color: '#409eff' },
+                                label: { show: true, position: 'top', formatter: '{c}' }
+                            },
+                            {
+                                name: '派息率',
+                                type: 'line',
+                                yAxisIndex: 1,
+                                data: yieldData,
+                                itemStyle: { color: '#67c23a' },
+                                label: { show: true, position: 'top', formatter: '{c}%' }
+                            }
+                        ]
+                    });
                 };
 
                 // 感悟管理
