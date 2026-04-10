@@ -1,0 +1,24 @@
+# 用户数据文件（本地使用，不提交）
+portfolio_data.json
+memos.json
+
+# 日志文件
+*.log
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Git
+.git/
+.gitignore
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
+*~

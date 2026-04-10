@@ -12,6 +12,7 @@ import akshare as ak
 
 from simple_limit_up import SimpleLimitUpAnalyzer
 from ai_service import AI_SERVICE, AI_CONFIG
+from baostock_fetcher import batch_get_prices, get_stock_price
 
 app = FastAPI(title="MyStock API", version="1.0.0")
 
@@ -32,6 +33,97 @@ DATA_FILE = os.path.join(BASE_DIR, "portfolio_data.json")
 STOCK_CODES_FILE = os.path.join(BASE_DIR, "stock_codes.json")
 MEMOS_FILE = os.path.join(BASE_DIR, "memos.json")
 DB_FILE = os.path.join(BASE_DIR, "finance_data.db")
+
+# 缓存配置
+CACHE_DURATION = 7 * 24 * 60 * 60  # 7 天缓存期
+
+def init_dividend_cache_table():
+    """初始化分红缓存表"""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS dividend_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stock_code TEXT NOT NULL,
+                stock_name TEXT,
+                dividend_data TEXT NOT NULL,
+                cache_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expire_time TIMESTAMP,
+                UNIQUE(stock_code)
+            )
+        ''')
+        
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_dividend_code ON dividend_cache(stock_code)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_dividend_expire ON dividend_cache(expire_time)')
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"创建分红缓存表失败：{e}")
+
+def clean_expired_cache():
+    """清理过期缓存"""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM dividend_cache WHERE expire_time < ?', (datetime.now(),))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"清理过期缓存失败：{e}")
+
+def get_dividend_cached(code: str, force_refresh=False):
+    """
+    获取缓存的分红数据
+    :param code: 股票代码
+    :param force_refresh: 是否强制刷新
+    :return: 分红数据列表
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        if not force_refresh:
+            cursor.execute('''
+                SELECT dividend_data, expire_time 
+                FROM dividend_cache 
+                WHERE stock_code = ?
+            ''', (code,))
+            row = cursor.fetchone()
+            
+            if row:
+                data = json.loads(row[0])
+                expire_time = datetime.fromisoformat(row[1])
+                
+                if datetime.now() < expire_time:
+                    conn.close()
+                    return data
+        
+        conn.close()
+        
+        dividend_list = get_dividend_data(code, years=10)
+        
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO dividend_cache 
+            (stock_code, dividend_data, expire_time)
+            VALUES (?, ?, ?)
+        ''', (code, json.dumps(dividend_list), 
+              datetime.now() + timedelta(seconds=CACHE_DURATION)))
+        
+        conn.commit()
+        conn.close()
+        
+        return dividend_list
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return []
 
 def load_stock_codes():
     """加载股票代码信息"""
@@ -1120,21 +1212,11 @@ def get_dividend_data(code: str, years: int = 10):
         except:
             return None
     
-    def get_stock_price(symbol: str, date_str: str):
-        """获取指定日期的收盘价"""
-        try:
-            if not date_str or len(date_str) < 8:
-                return None
-            clean_date = date_str.replace('-', '').replace('/', '')
-            if len(clean_date) != 8 or not clean_date.isdigit():
-                return None
-            df = ak.stock_zh_a_hist(symbol=symbol, period='daily', 
-                                   start_date=clean_date, end_date=clean_date, adjust='qfq')
-            if df is not None and len(df) > 0:
-                return to_native(df.iloc[0]['收盘'])
-        except:
-            pass
-        return None
+    # 注：原腾讯API函数已注释掉，使用外部导入的BaoStock函数
+    # batch_get_prices函数现在从baostock_fetcher模块导入
+    
+    # 注：原腾讯API函数已注释掉，使用外部导入的BaoStock函数
+    # get_stock_price函数现在从baostock_fetcher模块导入
     
     try:
         stock_code = code.replace('.SH', '').replace('.SZ', '').replace('sh', '').replace('sz', '')
@@ -1147,6 +1229,10 @@ def get_dividend_data(code: str, years: int = 10):
         current_year = datetime.now().year
         cutoff_year = current_year - years
         
+        # 收集所有需要查询价格的日期
+        price_dates = []
+        dividend_records = []
+        
         for _, row in df.iterrows():
             progress = to_native(row.get('进度'))
             if progress != '实施':
@@ -1154,7 +1240,8 @@ def get_dividend_data(code: str, years: int = 10):
             
             announce_date = to_native(row.get('公告日期'))
             ex_div_date = to_native(row.get('除权除息日'))
-            cash_div = to_native(row.get('派息'))
+            cash_div_raw = to_native(row.get('派息'))
+            cash_div = cash_div_raw / 10 if cash_div_raw else 0
             
             if not cash_div or cash_div <= 0:
                 continue
@@ -1174,17 +1261,39 @@ def get_dividend_data(code: str, years: int = 10):
             if year < cutoff_year:
                 continue
             
-            dividend_yield = None
             if ex_div_date and isinstance(ex_div_date, str) and len(ex_div_date) >= 8:
-                price = get_stock_price(stock_code, ex_div_date)
-                if price and price > 0:
-                    dividend_yield = round((cash_div / price) * 100, 2)
+                # 统一日期格式为 YYYYMMDD
+                clean_date = ex_div_date.replace('/', '').replace('-', '')
+                if len(clean_date) == 8:
+                    price_dates.append(clean_date)
             
-            dividend_list.append({
+            dividend_records.append({
                 'announce_date': announce_date if announce_date else '',
                 'cash_div': round(cash_div, 2) if cash_div else 0,
                 'ex_div_date': ex_div_date if ex_div_date else '',
                 'progress': progress if progress else '',
+                'year': year
+            })
+        
+        # 批量获取所有价格
+        price_map = batch_get_prices(stock_code, price_dates)
+        
+        # 组装最终结果
+        for record in dividend_records:
+            dividend_yield = None
+            if record['ex_div_date'] and isinstance(record['ex_div_date'], str) and len(record['ex_div_date']) >= 8:
+                # 统一日期格式为 YYYYMMDD
+                clean_date = record['ex_div_date'].replace('/', '').replace('-', '')
+                if len(clean_date) == 8:
+                    price = price_map.get(clean_date)
+                    if price and price > 0:
+                        dividend_yield = round((record['cash_div'] / price) * 100, 2)
+            
+            dividend_list.append({
+                'announce_date': record['announce_date'],
+                'cash_div': record['cash_div'],
+                'ex_div_date': record['ex_div_date'],
+                'progress': record['progress'],
                 'dividend_yield': dividend_yield
             })
         
@@ -1194,6 +1303,23 @@ def get_dividend_data(code: str, years: int = 10):
         import traceback
         traceback.print_exc()
         return []
+
+
+@app.get("/api/stock-dividend/{code}")
+def get_stock_dividend(code: str):
+    """异步获取股票分红数据（带缓存）"""
+    dividend_list = get_dividend_cached(code)
+    return {'dividend_list': dividend_list}
+
+
+@app.post("/api/cache/refresh/{code}")
+def refresh_dividend_cache(code: str):
+    """手动刷新分红缓存"""
+    try:
+        dividend_list = get_dividend_cached(code, force_refresh=True)
+        return {'status': 'success', 'count': len(dividend_list)}
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}
 
 
 @app.get("/api/stock-detail/{code}")
@@ -1247,8 +1373,7 @@ def get_stock_detail(code: str):
                 result['min_roe_year'] = min_item['year']
                 result['min_roe'] = min_item['roe']
 
-        dividend_list = get_dividend_data(code, years=10)
-        result['dividend_list'] = dividend_list
+        result['dividend_list'] = []
 
         conn.close()
 
@@ -1258,6 +1383,14 @@ def get_stock_detail(code: str):
         import traceback
         traceback.print_exc()
         return {'error': str(e)}
+
+
+@app.on_event("startup")
+async def startup_event():
+    """启动时初始化缓存表并清理过期数据"""
+    init_dividend_cache_table()
+    clean_expired_cache()
+    print("分红缓存表初始化完成，已清理过期数据")
 
 
 if __name__ == "__main__":

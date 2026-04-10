@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MyStock - 我的股票</title>
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <!-- 引入拼音匹配库，支持拼音首字母搜索 -->
+    <script src="https://unpkg.com/pinyin-match@1.3.1/dist/pinyin-match.min.js"></script>
 
     <!-- ============================================================
          📦 第一部分：CSS 样式
@@ -2091,30 +2093,36 @@
                 <!-- 分红情况 -->
                 <div style="margin-bottom: 20px;">
                     <div style="font-weight: bold; margin-bottom: 10px; color: #303133;">💰 历年分红</div>
-                    <div id="dividend-chart" style="width: 100%; height: 200px; margin-bottom: 15px;"></div>
-                    <el-table 
-                        v-if="stockDetail.dividend_list && stockDetail.dividend_list.length > 0"
-                        :data="stockDetail.dividend_list.slice(0, 20)"
-                        size="small"
-                        border
-                        style="font-size: 12px;">
-                        <el-table-column prop="announce_date" label="公告日期" width="100"></el-table-column>
-                        <el-table-column label="每股派息" width="90">
-                            <template #default="{row}">{{ row.cash_div }}元</template>
-                        </el-table-column>
-                        <el-table-column prop="ex_div_date" label="除权除息日" width="110"></el-table-column>
-                        <el-table-column label="派息率">
-                            <template #default="{row}">
-                                <span :style="{color: row.dividend_yield && row.dividend_yield > 3 ? '#67c23a' : '#909399'}">
-                                    {{ row.dividend_yield ? row.dividend_yield + '%' : '-' }}
-                                </span>
-                            </template>
-                        </el-table-column>
-                        <el-table-column prop="progress" label="进度" width="60"></el-table-column>
-                    </el-table>
-                    <div v-else style="color: #909399; font-size: 13px; padding: 10px; text-align: center;">
-                        暂无分红数据
+                    <div v-if="dividendLoading" style="text-align: center; padding: 20px; color: #909399;">
+                        加载分红数据中...
                     </div>
+                    <template v-else>
+                        <div v-if="stockDetail.dividend_list && stockDetail.dividend_list.length > 0">
+                            <div id="dividend-chart" style="width: 100%; height: 250px; margin-bottom: 15px;"></div>
+                            <el-table 
+                                :data="stockDetail.dividend_list.slice(0, 20)"
+                                size="small"
+                                border
+                                style="font-size: 12px;">
+                                <el-table-column prop="announce_date" label="公告日期" width="100"></el-table-column>
+                                <el-table-column label="每股派息" width="90">
+                                    <template #default="{row}">{{ row.cash_div }}元</template>
+                                </el-table-column>
+                                <el-table-column prop="ex_div_date" label="除权除息日" width="110"></el-table-column>
+                                <el-table-column label="派息率">
+                                    <template #default="{row}">
+                                        <span :style="{color: row.dividend_yield && row.dividend_yield > 3 ? '#67c23a' : '#909399'}">
+                                            {{ row.dividend_yield ? row.dividend_yield + '%' : '-' }}
+                                        </span>
+                                    </template>
+                                </el-table-column>
+                                <el-table-column prop="progress" label="进度" width="60"></el-table-column>
+                            </el-table>
+                        </div>
+                        <div v-else style="color: #909399; font-size: 13px; padding: 10px; text-align: center;">
+                            暂无分红数据
+                        </div>
+                    </template>
                 </div>
 
                 <!-- 股票基本信息 -->
@@ -2270,6 +2278,7 @@
                 const showStockDetailModal = ref(false);
                 const stockDetail = ref(null);
                 const stockDetailLoading = ref(false);
+                const dividendLoading = ref(false);
                 let stockDetailChart = null;
 
                 // 获取所有备忘（计算属性）
@@ -2518,19 +2527,27 @@
                 const fetchStockDetail = async (code) => {
                     showStockDetailModal.value = true;
                     stockDetailLoading.value = true;
+                    stockDetail.value = { dividend_list: [] };
+                    dividendLoading.value = false;
+                    
                     try {
                         const response = await fetch(`${API_BASE}/api/stock-detail/${code}`);
                         const data = await response.json();
                         stockDetail.value = data;
-                        setTimeout(() => {
-                            renderStockDetailChart();
-                            renderDividendChart();
-                        }, 100);
+                        stockDetailLoading.value = false;
+                        setTimeout(() => renderStockDetailChart(), 100);
+                        
+                        dividendLoading.value = true;
+                        const divResponse = await fetch(`${API_BASE}/api/stock-dividend/${code}`);
+                        const divData = await divResponse.json();
+                        if (divData.dividend_list && divData.dividend_list.length > 0) {
+                            stockDetail.value.dividend_list = divData.dividend_list;
+                            setTimeout(() => renderDividendChart(), 100);
+                        }
                     } catch (error) {
                         console.error('获取股票详情失败:', error);
-                        stockDetail.value = null;
                     } finally {
-                        stockDetailLoading.value = false;
+                        dividendLoading.value = false;
                     }
                 };
 
@@ -2588,12 +2605,12 @@
                         }
                     });
                     
-                    const years = Object.keys(yearly).sort().reverse().slice(0, 10);
+                    const years = Object.keys(yearly).sort().slice(0, 10);
                     const cashData = years.map(y => yearly[y].total.toFixed(2));
                     const yieldData = years.map(y => {
                         if (yearly[y].yields.length === 0) return null;
-                        const avg = yearly[y].yields.reduce((a, b) => a + b, 0) / yearly[y].yields.length;
-                        return parseFloat(avg.toFixed(2));
+                        const sum = yearly[y].yields.reduce((a, b) => a + b, 0);
+                        return parseFloat(sum.toFixed(2));
                     });
                     
                     window.dividendChartInstance = echarts.init(chartDom);
@@ -2612,7 +2629,13 @@
                                 type: 'bar',
                                 data: cashData,
                                 itemStyle: { color: '#409eff' },
-                                label: { show: true, position: 'top', formatter: '{c}' }
+                                label: { 
+                                    show: true, 
+                                    position: 'inside',  // 显示在柱体内部
+                                    formatter: '{c}',
+                                    color: '#fff',        // 白色字体，在蓝色背景上清晰可见
+                                    fontWeight: 'bold'
+                                }
                             },
                             {
                                 name: '派息率',
@@ -2620,7 +2643,14 @@
                                 yAxisIndex: 1,
                                 data: yieldData,
                                 itemStyle: { color: '#67c23a' },
-                                label: { show: true, position: 'top', formatter: '{c}%' }
+                                label: { 
+                                    show: true, 
+                                    position: 'top',     // 改回顶部（折线上方）
+                                    formatter: '{c}%',
+                                    color: '#67c23a',
+                                    fontSize: 12,
+                                    fontWeight: 'bold'
+                                }
                             }
                         ]
                     });
@@ -2803,20 +2833,54 @@
                         const allCodes = data.stock_codes || {};
 
                         const keywordLower = keyword.toLowerCase();
+                        
+                        // 检测输入类型
+                        function detectInputType(kw) {
+                            // 纯数字（股票代码）
+                            if (/^\d+$/.test(kw)) return 'code';
+                            // 以 sh/sz/hk 开头（完整代码）
+                            if (/^(sh|sz|hk)\d+/i.test(kw)) return 'full_code';
+                            // 纯字母（可能是拼音）
+                            if (/^[a-zA-Z]+$/.test(kw)) return 'pinyin';
+                            // 包含中文
+                            if (/[\u4e00-\u9fa5]/.test(kw)) return 'chinese';
+                            // 混合（字母+数字）
+                            return 'mixed';
+                        }
+                        
+                        const inputType = detectInputType(keyword);
+                        const isPinyinInput = inputType === 'pinyin';
+                        const isPureCode = inputType === 'code' || inputType === 'full_code';
 
                         // 新数据结构: {code: {name, aliases}}
                         for (const [code, info] of Object.entries(allCodes)) {
-                            // 检查code是否匹配
-                            if (code.toLowerCase().includes(keywordLower)) {
-                                results.push({
-                                    name: info.name,
-                                    code: code,
-                                    type: ''
-                                });
-                                continue;
+                            let matched = false;
+                            
+                            // 策略1：代码匹配（仅对纯数字或完整代码输入）
+                            if (isPureCode) {
+                                if (code.toLowerCase().includes(keywordLower)) {
+                                    results.push({
+                                        name: info.name,
+                                        code: code,
+                                        type: ''
+                                    });
+                                    matched = true;
+                                }
+                            } else if (!isPinyinInput) {
+                                // 非拼音输入时，进行代码模糊匹配
+                                if (code.toLowerCase().includes(keywordLower)) {
+                                    results.push({
+                                        name: info.name,
+                                        code: code,
+                                        type: ''
+                                    });
+                                    matched = true;
+                                }
                             }
+                            
+                            if (matched) continue;
 
-                            // 检查name是否匹配
+                            // 策略2：中文名称匹配（中文输入或混合输入）
                             if (info.name && info.name.toLowerCase().includes(keywordLower)) {
                                 results.push({
                                     name: info.name,
@@ -2826,10 +2890,97 @@
                                 continue;
                             }
 
-                            // 检查aliases是否匹配
+                            // 策略3：别名匹配
                             if (info.aliases && Array.isArray(info.aliases)) {
                                 for (const alias of info.aliases) {
                                     if (alias.toLowerCase().includes(keywordLower)) {
+                                        results.push({
+                                            name: info.name,
+                                            code: code,
+                                            type: ''
+                                        });
+                                        matched = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if (matched) continue;
+
+                            // 策略4：拼音匹配（优先处理拼音输入）
+                            if (info.name && isPinyinInput) {
+                                let pinyinMatched = false;
+                                
+                                // 清理股票名称：移除全角字母、多余空格等
+                                const cleanName = info.name
+                                    .replace(/[Ａ-Ｚ]/g, char => String.fromCharCode(char.charCodeAt(0) - 65248)) // 全角转半角
+                                    .replace(/\s+/g, '')  // 移除所有空格
+                                    .replace(/[　]/g, ''); // 移除全角空格
+                                
+                                // 1. 首先尝试使用PinyinMatch库
+                                if (window.PinyinMatch) {
+                                    const matchResult = window.PinyinMatch.match(info.name, keyword);
+                                    if (matchResult !== false) {
+                                        results.push({
+                                            name: info.name,
+                                            code: code,
+                                            type: ''
+                                        });
+                                        pinyinMatched = true;
+                                    }
+                                }
+                                
+                                // 2. 如果PinyinMatch失败，尝试清理后的名称
+                                if (!pinyinMatched && cleanName !== info.name && window.PinyinMatch) {
+                                    const matchResult = window.PinyinMatch.match(cleanName, keyword);
+                                    if (matchResult !== false) {
+                                        results.push({
+                                            name: info.name,
+                                            code: code,
+                                            type: ''
+                                        });
+                                        pinyinMatched = true;
+                                    }
+                                }
+                                
+                                // 3. 如果还是失败，尝试拼音首字母推导匹配
+                                if (!pinyinMatched) {
+                                    // 对于拼音输入，尝试提取中文部分进行匹配
+                                    const chinesePart = info.name.replace(/[^\u4e00-\u9fa5]/g, '');
+                                    if (chinesePart && window.PinyinMatch) {
+                                        const matchResult = window.PinyinMatch.match(chinesePart, keyword);
+                                        if (matchResult !== false) {
+                                            results.push({
+                                                name: info.name,
+                                                code: code,
+                                                type: ''
+                                            });
+                                            pinyinMatched = true;
+                                        }
+                                    }
+                                }
+                                
+                                // 4. 如果拼音匹配成功，跳过后续检查
+                                if (pinyinMatched) continue;
+                            }
+                        }
+                        
+                        // 特殊处理：对于拼音输入，如果没有匹配结果，尝试更智能的匹配
+                        if (results.length === 0 && isPinyinInput) {
+                            // 尝试将拼音首字母映射到常见股票
+                            const pinyinMap = {
+                                'gzmt': '贵州茅台',
+                                'payh': '平安银行',
+                                'zgpa': '中国平安',
+                                'zsyh': '招商银行',
+                                'zxzq': '中信证券',
+                                'wka': '万科A',
+                                'zgba': '中国宝安',
+                            };
+                            
+                            if (pinyinMap[keyword]) {
+                                for (const [code, info] of Object.entries(allCodes)) {
+                                    if (info.name && info.name.includes(pinyinMap[keyword])) {
                                         results.push({
                                             name: info.name,
                                             code: code,
@@ -2839,10 +2990,41 @@
                                     }
                                 }
                             }
+                            
+                            // 如果还没有结果，尝试外部API作为最后手段
+                            if (results.length === 0) {
+                                // 尝试新浪JSONP API
+                                const sinaUrl = `https://suggest3.sinajs.cn/suggest/type=11,12,13,14&key=${encodeURIComponent(keyword)}`;
+
+                                await new Promise((resolve) => {
+                                    const script = document.createElement('script');
+                                    script.src = sinaUrl;
+                                    script.onload = () => {
+                                        const val = window.suggestvalue || '';
+                                        if (val && val !== '""' && val !== '";"') {
+                                            const items = val.split(',');
+                                            for (let i = 0; i < items.length; i += 5) {
+                                                if (i + 4 < items.length && items[i + 1]) {
+                                                    results.push({
+                                                        name: items[i + 1],
+                                                        code: items[i + 3],
+                                                        type: items[i + 2]
+                                                    });
+                                                }
+                                            }
+                                        }
+                                        resolve();
+                                    };
+                                    script.onerror = resolve;
+                                    setTimeout(resolve, 2000);
+                                    document.head.appendChild(script);
+                                    setTimeout(() => script.remove(), 3000);
+                                });
+                            }
                         }
 
-                        // 2. 如果本地没有结果，尝试外部API
-                        if (results.length === 0) {
+                        // 2. 如果本地没有结果且不是拼音输入，尝试外部API
+                        if (results.length === 0 && !isPinyinInput) {
                             // 尝试新浪JSONP API
                             const sinaUrl = `https://suggest3.sinajs.cn/suggest/type=11,12,13,14&key=${encodeURIComponent(keyword)}`;
 
@@ -3237,6 +3419,7 @@
                     showStockDetailModal,
                     stockDetail,
                     stockDetailLoading,
+                    dividendLoading,
                     fetchStockDetail,
                     updateProgress,
                     alertStocks,
