@@ -1,20 +1,27 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
+from datetime import datetime, timedelta
 import json
 import os
 import requests
 import httpx
 import asyncio
-from datetime import datetime, timedelta
 import akshare as ak
 
 from simple_limit_up import SimpleLimitUpAnalyzer
 from ai_service import AI_SERVICE, AI_CONFIG
 from baostock_fetcher import batch_get_prices, get_stock_price
+from db_init import init_all
+from auth import (
+    get_current_user, get_optional_user,
+    create_token, verify_password,
+    get_user_by_email, create_user, update_last_login
+)
+from models import RegisterRequest, LoginRequest, TokenResponse, UserInfo, ChangePasswordRequest
 
-app = FastAPI(title="MyStock API", version="1.0.0")
+app = FastAPI(title="MyStock API", version="2.0.0")
 
 # CORS配置
 app.add_middleware(
@@ -196,17 +203,57 @@ class ChatRequest(BaseModel):
     message: str
     history: List[ChatMessage] = []
 
-# 加载数据
+# 加载数据（从数据库）
 def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {'portfolio': [], 'watchlist': [], 'stock_codes': {}}
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    result = {'portfolio': [], 'watchlist': [], 'stock_codes': {}}
+    
+    # 从数据库读取持仓
+    cursor.execute('''
+        SELECT json_value FROM user_data 
+        WHERE user_id = 'default_user' AND data_type = 'portfolio'
+    ''')
+    row = cursor.fetchone()
+    if row:
+        result['portfolio'] = json.loads(row[0])
+    
+    # 从数据库读取观察列表
+    cursor.execute('''
+        SELECT json_value FROM user_data 
+        WHERE user_id = 'default_user' AND data_type = 'watchlist'
+    ''')
+    row = cursor.fetchone()
+    if row:
+        result['watchlist'] = json.loads(row[0])
+    
+    conn.close()
+    return result
 
-# 保存数据
+# 保存数据（到数据库）
 def save_data(data):
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # 保存持仓
+    if 'portfolio' in data:
+        cursor.execute('''
+            INSERT OR REPLACE INTO user_data 
+            (user_id, data_type, data_key, json_value, updated_at)
+            VALUES ('default_user', 'portfolio', '', ?, ?)
+        ''', (json.dumps(data['portfolio']), datetime.now()))
+    
+    # 保存观察列表
+    if 'watchlist' in data:
+        cursor.execute('''
+            INSERT OR REPLACE INTO user_data 
+            (user_id, data_type, data_key, json_value, updated_at)
+            VALUES ('default_user', 'watchlist', '', ?, ?)
+        ''', (json.dumps(data['watchlist']), datetime.now()))
+    
+    conn.commit()
+    conn.close()
 
 # 获取股票数据（腾讯API）
 def get_stock_data(ticker: str, code: str) -> Optional[dict]:
@@ -314,7 +361,7 @@ def fetch_stock_data_async(ticker: str, code: str):
 # API 路由
 @app.get("/")
 def root():
-    return {"message": "MyStock API", "version": "1.0.0"}
+    return {"message": "MyStock API", "version": "2.0.0"}
 
 # 获取所有数据
 @app.get("/api/data", response_model=PortfolioResponse)
@@ -322,123 +369,44 @@ def get_all_data():
     return load_data()
 
 # 获取股票列表（快速返回，不调用外部API）
-def load_memos():
-    """加载备忘录数据"""
-    try:
-        if os.path.exists(MEMOS_FILE):
-            with open(MEMOS_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"加载备忘录失败: {e}")
-    return {}
+def load_memos(user_id=None):
+    """加载备忘录数据（支持按用户加载）"""
+    if user_id:
+        # 从数据库加载用户的备忘录
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
+                           (user_id, 'memos'))
+            row = cursor.fetchone()
+            conn.close()
+            
+            return json.loads(row[0]) if row else {}
+        except Exception as e:
+            print(f"加载用户备忘录失败: {e}")
+            return {}
+    else:
+        # 从默认用户加载备忘录（向后兼容）
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
+                           ('default_user', 'memos'))
+            row = cursor.fetchone()
+            conn.close()
+            
+            return json.loads(row[0]) if row else {}
+        except Exception as e:
+            print(f"加载默认备忘录失败: {e}")
+            return {}
 
-@app.get("/api/stock-list")
-def get_stock_list():
-    data = load_data()
-    portfolio = data.get('portfolio', [])
-    watchlist = data.get('watchlist', [])
-    stock_codes = load_stock_codes()
-    memos = load_memos()
 
-    portfolio_list = []
-    for code in portfolio:
-        stock_info = stock_codes.get(code, {})
-        name = stock_info.get('name', code)
-        memo_info = memos.get(code, {})
-        portfolio_list.append({
-            'ticker': name,
-            'code': code,
-            'name': name,
-            'price': None,
-            'change': None,
-            'change_percent': None,
-            'memo': memo_info.get('memo', ''),
-            'updated_at': memo_info.get('updated_at', '')
-        })
-
-    watchlist_list = []
-    for code in watchlist:
-        stock_info = stock_codes.get(code, {})
-        name = stock_info.get('name', code)
-        memo_info = memos.get(code, {})
-        watchlist_list.append({
-            'ticker': name,
-            'code': code,
-            'name': name,
-            'price': None,
-            'change': None,
-            'change_percent': None,
-            'memo': memo_info.get('memo', ''),
-            'updated_at': memo_info.get('updated_at', '')
-        })
-
-    return {
-        "portfolio": portfolio_list,
-        "watchlist": watchlist_list,
-        "count": len(portfolio_list) + len(watchlist_list)
-    }
 
 # 异步获取单只股票数据
 def fetch_stock_data_async(ticker: str, code: str):
     return get_stock_data(ticker, code)
-
-# 获取持仓列表（带实时数据）- 批量获取
-@app.get("/api/portfolio")
-def get_portfolio():
-    import time
-    timings = {}
-
-    t0 = time.time()
-    data = load_data()
-    timings['load_data'] = f"{(time.time()-t0)*1000:.1f}ms"
-
-    portfolio = data.get('portfolio', [])
-
-    t1 = time.time()
-    stock_codes = load_stock_codes()
-    timings['load_stock_codes'] = f"{(time.time()-t1)*1000:.1f}ms"
-
-    t2 = time.time()
-    # 准备需要获取数据的股票列表
-    stocks_to_fetch = []
-    for code in portfolio:
-        if code in stock_codes:
-            stocks_to_fetch.append({
-                'code': code,
-                'name': stock_codes[code]['name']
-            })
-
-    # 批量获取所有股票数据（一次性请求）
-    stocks_data = get_stocks_data_batch(stocks_to_fetch)
-    timings['fetch_stock_data'] = f"{(time.time()-t2)*1000:.1f}ms ({len(stocks_to_fetch)} 只股票)"
-
-    # 构建结果列表
-    result = []
-    for code in portfolio:
-        if code in stocks_data:
-            result.append(stocks_data[code])
-        else:
-            name = stock_codes.get(code, {}).get('name', code)
-            result.append({
-                'ticker': name,
-                'code': code,
-                'price': None,
-                'change': None,
-                'change_percent': None
-            })
-
-    timings['total'] = f"{(time.time()-t0)*1000:.1f}ms"
-
-    print(f"\n[性能分析] get_portfolio:")
-    for step, t in timings.items():
-        print(f"  {step}: {t}")
-
-    return {
-        "portfolio": result,
-        "count": len(result),
-        "timestamp": datetime.now().isoformat(),
-        "_timings": timings
-    }
 
 # 获取股票的ROE数据
 @app.get("/api/roe-data/{code}")
@@ -457,123 +425,145 @@ def get_stock_roe(code: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取ROE数据失败: {str(e)}")
 
-# 获取观察列表（带实时数据）- 批量获取
-@app.get("/api/watchlist")
-def get_watchlist():
-    import time
-    timings = {}
-
-    t0 = time.time()
-    data = load_data()
-    timings['load_data'] = f"{(time.time()-t0)*1000:.1f}ms"
-
-    watchlist = data.get('watchlist', [])
-
-    t1 = time.time()
-    stock_codes = load_stock_codes()
-    timings['load_stock_codes'] = f"{(time.time()-t1)*1000:.1f}ms"
-
-    t2 = time.time()
-    # 准备需要获取数据的股票列表
-    stocks_to_fetch = []
-    for code in watchlist:
-        if code in stock_codes:
-            stocks_to_fetch.append({
-                'code': code,
-                'name': stock_codes[code]['name']
-            })
-
-    # 批量获取所有股票数据（一次性请求）
-    stocks_data = get_stocks_data_batch(stocks_to_fetch)
-    timings['fetch_stock_data'] = f"{(time.time()-t2)*1000:.1f}ms ({len(stocks_to_fetch)} 只股票)"
-
-    # 构建结果列表
-    result = []
-    for code in watchlist:
-        if code in stocks_data:
-            result.append(stocks_data[code])
-        else:
-            name = stock_codes.get(code, {}).get('name', code)
-            result.append({
-                'ticker': name,
-                'code': code,
-                'price': None,
-                'change': None,
-                'change_percent': None
-            })
-
-    timings['total'] = f"{(time.time()-t0)*1000:.1f}ms"
-
-    print(f"\n[性能分析] get_watchlist:")
-    for step, t in timings.items():
-        print(f"  {step}: {t}")
-
-    return {
-        "watchlist": result,
-        "count": len(result),
-        "timestamp": datetime.now().isoformat(),
-        "_timings": timings
-    }
-
 # 添加持仓
 @app.post("/api/portfolio/{ticker}")
-def add_portfolio(ticker: str):
-    data = load_data()
+def add_portfolio(ticker: str, current_user: dict = Depends(get_current_user)):
+    """添加持仓（需登录）"""
+    user_id = current_user['user_id']
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # 获取用户当前持仓
+    cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
+                   (user_id, 'portfolio'))
+    row = cursor.fetchone()
+    portfolio_codes = json.loads(row[0]) if row else []
+    
+    # 检查股票代码是否存在
     stock_codes = load_stock_codes()
-
-    if ticker in stock_codes:
-        portfolio = data.get('portfolio', [])
-        if ticker not in portfolio:
-            portfolio.append(ticker)
-            data['portfolio'] = portfolio
-            save_data(data)
-            return {"success": True, "message": f"已添加 {ticker} 到持仓"}
-
-    raise HTTPException(status_code=400, detail="股票代码不存在或已在持仓中")
+    if ticker not in stock_codes:
+        conn.close()
+        raise HTTPException(status_code=400, detail="股票代码不存在")
+    
+    # 检查是否已在持仓中
+    if ticker in portfolio_codes:
+        conn.close()
+        raise HTTPException(status_code=400, detail="股票已在持仓中")
+    
+    # 添加到持仓
+    portfolio_codes.append(ticker)
+    cursor.execute('''
+        INSERT OR REPLACE INTO user_data 
+        (user_id, data_type, data_key, json_value, updated_at)
+        VALUES (?, ?, '', ?, ?)
+    ''', (user_id, 'portfolio', json.dumps(portfolio_codes), datetime.now()))
+    
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": f"已添加 {ticker} 到持仓"}
 
 # 移除持仓
 @app.delete("/api/portfolio/{ticker}")
-def remove_portfolio(ticker: str):
-    data = load_data()
-    portfolio = data.get('portfolio', [])
-
-    if ticker in portfolio:
-        portfolio.remove(ticker)
-        data['portfolio'] = portfolio
-        save_data(data)
-        return {"success": True, "message": f"已移除 {ticker}"}
-
-    raise HTTPException(status_code=404, detail="股票不在持仓中")
+def remove_portfolio(ticker: str, current_user: dict = Depends(get_current_user)):
+    """移除持仓（需登录）"""
+    user_id = current_user['user_id']
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # 获取用户当前持仓
+    cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
+                   (user_id, 'portfolio'))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="股票不在持仓中")
+    
+    portfolio_codes = json.loads(row[0])
+    if ticker not in portfolio_codes:
+        conn.close()
+        raise HTTPException(status_code=404, detail="股票不在持仓中")
+    
+    # 从持仓中移除
+    portfolio_codes.remove(ticker)
+    cursor.execute('''
+        INSERT OR REPLACE INTO user_data 
+        (user_id, data_type, data_key, json_value, updated_at)
+        VALUES (?, ?, '', ?, ?)
+    ''', (user_id, 'portfolio', json.dumps(portfolio_codes), datetime.now()))
+    
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": f"已移除 {ticker}"}
 
 # 添加观察列表
 @app.post("/api/watchlist/{ticker}")
-def add_watchlist(ticker: str):
-    data = load_data()
+def add_watchlist(ticker: str, current_user: dict = Depends(get_current_user)):
+    """添加观察列表（需登录）"""
+    user_id = current_user['user_id']
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # 获取用户当前观察列表
+    cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
+                   (user_id, 'watchlist'))
+    row = cursor.fetchone()
+    watchlist_codes = json.loads(row[0]) if row else []
+    
+    # 检查股票代码是否存在
     stock_codes = load_stock_codes()
-
-    if ticker in stock_codes:
-        watchlist = data.get('watchlist', [])
-        if ticker not in watchlist:
-            watchlist.append(ticker)
-            data['watchlist'] = watchlist
-            save_data(data)
-            return {"success": True, "message": f"已添加 {ticker} 到观察列表"}
-
-    raise HTTPException(status_code=400, detail="股票代码不存在或已在观察列表中")
+    if ticker not in stock_codes:
+        conn.close()
+        raise HTTPException(status_code=400, detail="股票代码不存在")
+    
+    # 检查是否已在观察列表中
+    if ticker in watchlist_codes:
+        conn.close()
+        raise HTTPException(status_code=400, detail="股票已在观察列表中")
+    
+    # 添加到观察列表
+    watchlist_codes.append(ticker)
+    cursor.execute('''
+        INSERT OR REPLACE INTO user_data 
+        (user_id, data_type, data_key, json_value, updated_at)
+        VALUES (?, ?, '', ?, ?)
+    ''', (user_id, 'watchlist', json.dumps(watchlist_codes), datetime.now()))
+    
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": f"已添加 {ticker} 到观察列表"}
 
 # 移除观察列表
 @app.delete("/api/watchlist/{ticker}")
-def remove_watchlist(ticker: str):
-    data = load_data()
-    watchlist = data.get('watchlist', [])
-
-    if ticker in watchlist:
-        watchlist.remove(ticker)
-        data['watchlist'] = watchlist
-        save_data(data)
-        return {"success": True, "message": f"已移除 {ticker}"}
-
-    raise HTTPException(status_code=404, detail="股票不在观察列表中")
+def remove_watchlist(ticker: str, current_user: dict = Depends(get_current_user)):
+    """移除观察列表（需登录）"""
+    user_id = current_user['user_id']
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # 获取用户当前观察列表
+    cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
+                   (user_id, 'watchlist'))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="股票不在观察列表中")
+    
+    watchlist_codes = json.loads(row[0])
+    if ticker not in watchlist_codes:
+        conn.close()
+        raise HTTPException(status_code=404, detail="股票不在观察列表中")
+    
+    # 从观察列表中移除
+    watchlist_codes.remove(ticker)
+    cursor.execute('''
+        INSERT OR REPLACE INTO user_data 
+        (user_id, data_type, data_key, json_value, updated_at)
+        VALUES (?, ?, '', ?, ?)
+    ''', (user_id, 'watchlist', json.dumps(watchlist_codes), datetime.now()))
+    
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": f"已移除 {ticker}"}
 
 # 添加股票代码映射
 @app.post("/api/stocks/{ticker}")
@@ -650,20 +640,41 @@ def chat(request: ChatRequest):
 
 # 感悟管理
 @app.get("/api/insights")
-def get_insights():
-    """获取所有感悟"""
-    data = load_data()
-    insights = data.get('insights', [])
+def get_insights(current_user: Optional[dict] = Depends(get_optional_user)):
+    """获取感悟（支持登录和未登录状态）"""
+    if current_user:
+        # 已登录用户：从数据库获取个性化数据
+        user_id = current_user['user_id']
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
+                       (user_id, 'insights'))
+        row = cursor.fetchone()
+        conn.close()
+        
+        insights = json.loads(row[0]) if row else []
+    else:
+        # 未登录用户：返回空数据
+        insights = []
+    
     return {
         "insights": insights,
         "count": len(insights)
     }
 
 @app.post("/api/insights")
-def add_insight(insight: dict):
-    """添加感悟"""
-    data = load_data()
-    insights = data.get('insights', [])
+def add_insight(insight: dict, current_user: dict = Depends(get_current_user)):
+    """添加感悟（需登录）"""
+    user_id = current_user['user_id']
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # 获取用户当前感悟
+    cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
+                   (user_id, 'insights'))
+    row = cursor.fetchone()
+    insights = json.loads(row[0]) if row else []
 
     insights.insert(0, insight)  # 新感悟插入到最前面
 
@@ -671,8 +682,15 @@ def add_insight(insight: dict):
     if len(insights) > 100:
         insights = insights[:100]
 
-    data['insights'] = insights
-    save_data(data)
+    # 保存到数据库
+    cursor.execute('''
+        INSERT OR REPLACE INTO user_data 
+        (user_id, data_type, data_key, json_value, updated_at)
+        VALUES (?, ?, '', ?, ?)
+    ''', (user_id, 'insights', json.dumps(insights), datetime.now()))
+    
+    conn.commit()
+    conn.close()
 
     return {
         "success": True,
@@ -681,21 +699,41 @@ def add_insight(insight: dict):
     }
 
 @app.delete("/api/insights/{index}")
-def delete_insight(index: int):
-    """删除感悟"""
-    data = load_data()
-    insights = data.get('insights', [])
-
+def delete_insight(index: int, current_user: dict = Depends(get_current_user)):
+    """删除感悟（需登录）"""
+    user_id = current_user['user_id']
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # 获取用户当前感悟
+    cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
+                   (user_id, 'insights'))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="感悟不存在")
+    
+    insights = json.loads(row[0])
     if 0 <= index < len(insights):
         insights.pop(index)
-        data['insights'] = insights
-        save_data(data)
+        
+        # 保存到数据库
+        cursor.execute('''
+            INSERT OR REPLACE INTO user_data 
+            (user_id, data_type, data_key, json_value, updated_at)
+            VALUES (?, ?, '', ?, ?)
+        ''', (user_id, 'insights', json.dumps(insights), datetime.now()))
+        
+        conn.commit()
+        conn.close()
+        
         return {
             "success": True,
             "insights": insights,
             "count": len(insights)
         }
     else:
+        conn.close()
         raise HTTPException(status_code=404, detail="感悟索引不存在")
 
 # 保存股票排序
@@ -806,22 +844,21 @@ def delete_history(index: int):
 
 # 保存股票备忘
 @app.post("/api/stock-memo")
-def save_memo(memo_data: dict):
-    """保存股票备忘"""
+def save_memo(memo_data: dict, current_user: dict = Depends(get_current_user)):
+    """保存股票备忘（需登录）"""
+    user_id = current_user['user_id']
     name = memo_data.get('name')
     code = memo_data.get('code')
     memo = memo_data.get('memo', '')
 
-    # 加载现有备忘数据
-    try:
-        if os.path.exists(MEMOS_FILE):
-            with open(MEMOS_FILE, 'r', encoding='utf-8') as f:
-                memos = json.load(f)
-        else:
-            memos = {}
-    except Exception as e:
-        print(f"加载 memos 失败: {e}")
-        memos = {}
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # 获取用户当前备忘
+    cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
+                   (user_id, 'memos'))
+    row = cursor.fetchone()
+    memos = json.loads(row[0]) if row else {}
 
     if memo and code:
         memos[code] = {
@@ -832,28 +869,38 @@ def save_memo(memo_data: dict):
     elif code in memos:
         del memos[code]
 
-    # 保存数据到memos.json
-    try:
-        with open(MEMOS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(memos, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"保存 memos 失败: {e}")
+    # 保存到数据库
+    cursor.execute('''
+        INSERT OR REPLACE INTO user_data 
+        (user_id, data_type, data_key, json_value, updated_at)
+        VALUES (?, ?, '', ?, ?)
+    ''', (user_id, 'memos', json.dumps(memos), datetime.now()))
+    
+    conn.commit()
+    conn.close()
 
     return {"success": True, "memos": memos}
 
 # 获取所有备忘
 @app.get("/api/stock-memo")
-def get_memos():
-    """获取所有股票备忘"""
-    try:
-        if os.path.exists(MEMOS_FILE):
-            with open(MEMOS_FILE, 'r', encoding='utf-8') as f:
-                memos = json.load(f)
-        else:
-            memos = {}
-    except Exception as e:
-        print(f"加载 memos 失败: {e}")
+def get_memos(current_user: Optional[dict] = Depends(get_optional_user)):
+    """获取股票备忘（支持登录和未登录状态）"""
+    if current_user:
+        # 已登录用户：从数据库获取个性化数据
+        user_id = current_user['user_id']
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
+                       (user_id, 'memos'))
+        row = cursor.fetchone()
+        conn.close()
+        
+        memos = json.loads(row[0]) if row else {}
+    else:
+        # 未登录用户：返回空数据
         memos = {}
+    
     return {"memos": memos}
 
 # 获取所有股票代码
@@ -904,34 +951,44 @@ def search_stock(keyword: str):
 
 # 添加股票
 @app.post("/api/add-stock")
-def add_stock(stock_data: dict):
-    """添加股票到持仓或观察"""
-    data = load_data()
-    name = stock_data.get('name')
+def add_stock(stock_data: dict, current_user: dict = Depends(get_current_user)):
+    """添加股票到持仓或观察（需登录）"""
+    user_id = current_user['user_id']
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
     code = stock_data.get('code')
     target = stock_data.get('target')
-
-    # 从 history（回收站）中移除
-    history = data.get('history', [])
-    new_history = [h for h in history if h.get('code') != code]
-    if len(new_history) < len(history):
-        data['history'] = new_history
-        print(f"从回收站移除了 {len(history) - len(new_history)} 条记录")
-
-    # 添加到 portfolio 或 watchlist（存储 code）
+    
+    # 获取当前用户数据
     if target == 'portfolio':
-        portfolio_list = data.get('portfolio', [])
+        cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', (user_id, 'portfolio'))
+        row = cursor.fetchone()
+        portfolio_list = json.loads(row[0]) if row else []
+        
         if code not in portfolio_list:
             portfolio_list.append(code)
-            data['portfolio'] = portfolio_list
+            cursor.execute('''
+                INSERT OR REPLACE INTO user_data (user_id, data_type, data_key, json_value, updated_at)
+                VALUES (?, 'portfolio', '', ?, ?)
+            ''', (user_id, json.dumps(portfolio_list), datetime.now()))
     else:
-        watchlist = data.get('watchlist', [])
+        cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', (user_id, 'watchlist'))
+        row = cursor.fetchone()
+        watchlist = json.loads(row[0]) if row else []
+        
         if code not in watchlist:
             watchlist.append(code)
-            data['watchlist'] = watchlist
-
-    save_data(data)
-    return {"success": True}
+            cursor.execute('''
+                INSERT OR REPLACE INTO user_data (user_id, data_type, data_key, json_value, updated_at)
+                VALUES (?, 'watchlist', '', ?, ?)
+            ''', (user_id, json.dumps(watchlist), datetime.now()))
+    
+    conn.commit()
+    conn.close()
+    
+    return {"success": True, "message": f"已将 {code} 添加到{target}"}
 
 # 获取单个股票数据
 @app.get("/api/stocks/{ticker}")
@@ -1387,11 +1444,273 @@ def get_stock_detail(code: str):
 
 @app.on_event("startup")
 async def startup_event():
-    """启动时初始化缓存表并清理过期数据"""
+    """启动时初始化数据库并迁移数据"""
+    # 初始化数据库和迁移数据
+    init_all()
+    # 初始化分红缓存表
     init_dividend_cache_table()
     clean_expired_cache()
-    print("分红缓存表初始化完成，已清理过期数据")
+    print("✅ 系统启动完成")
 
+
+# ========== 认证接口 ==========
+@app.post("/api/auth/register", response_model=TokenResponse)
+def register(req: RegisterRequest):
+    """用户注册"""
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="密码长度至少6位")
+    
+    if get_user_by_email(req.email):
+        raise HTTPException(status_code=400, detail="邮箱已被注册")
+    
+    user = create_user(req.email, req.password, req.nickname or "")
+    token = create_token(user['user_id'], user['email'])
+    
+    return TokenResponse(
+        token=token,
+        user={
+            'user_id': user['user_id'],
+            'email': user['email'],
+            'nickname': user['nickname']
+        }
+    )
+
+@app.post("/api/auth/login", response_model=TokenResponse)
+def login(req: LoginRequest):
+    """用户登录"""
+    user = get_user_by_email(req.email)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="邮箱或密码错误")
+    
+    if not verify_password(req.password, user['password_hash']):
+        raise HTTPException(status_code=401, detail="邮箱或密码错误")
+    
+    update_last_login(user['user_id'])
+    token = create_token(user['user_id'], user['email'])
+    
+    return TokenResponse(
+        token=token,
+        user={
+            'user_id': user['user_id'],
+            'email': user['email'],
+            'nickname': user['nickname']
+        }
+    )
+
+@app.get("/api/auth/userinfo", response_model=UserInfo)
+def get_user_info(current_user: dict = Depends(get_current_user)):
+    """获取当前用户信息"""
+    user = get_user_by_email(current_user['email'])
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    return UserInfo(
+        user_id=user['user_id'],
+        email=user['email'],
+        nickname=user['nickname'],
+        created_at=user['created_at']
+    )
+
+@app.post("/api/auth/change-password")
+def change_password(req: ChangePasswordRequest, current_user: dict = Depends(get_current_user)):
+    """修改密码"""
+    from auth import hash_password
+    
+    user = get_user_by_email(current_user['email'])
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    if not verify_password(req.old_password, user['password_hash']):
+        raise HTTPException(status_code=400, detail="原密码错误")
+    
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="新密码长度至少6位")
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET password_hash = ? WHERE user_id = ?', 
+                   (hash_password(req.new_password), user['user_id']))
+    conn.commit()
+    conn.close()
+    
+    return {"message": "密码修改成功"}
+
+@app.post("/api/auth/logout")
+def logout(current_user: dict = Depends(get_current_user)):
+    """登出（前端删除token即可）"""
+    return {"message": "已退出登录"}
+
+# ========== 需要认证的用户数据接口 ==========
+def get_portfolio_with_prices(portfolio_codes, user_id=None):
+    """获取持仓列表并添加价格信息"""
+    stock_codes = load_stock_codes()
+    memos = load_memos(user_id)
+    
+    # 构建股票列表
+    stocks = []
+    for code in portfolio_codes:
+        stock_info = stock_codes.get(code, {})
+        name = stock_info.get('name', code)
+        stocks.append({'name': name, 'code': code})
+    
+    # 批量获取股票数据
+    stock_data = get_stocks_data_batch(stocks)
+    
+    # 构建返回结果
+    portfolio_list = []
+    for code in portfolio_codes:
+        stock_info = stock_codes.get(code, {})
+        name = stock_info.get('name', code)
+        memo_info = memos.get(code, {})
+        stock_data_item = stock_data.get(code, {})
+        
+        portfolio_list.append({
+            'ticker': name,
+            'code': code,
+            'name': name,
+            'price': stock_data_item.get('price'),
+            'change': stock_data_item.get('change'),
+            'change_percent': stock_data_item.get('change_percent'),
+            'memo': memo_info.get('memo', ''),
+            'updated_at': memo_info.get('updated_at', '')
+        })
+    
+    return {
+        "portfolio": portfolio_list,
+        "count": len(portfolio_list),
+        "timestamp": datetime.now().isoformat()
+    }
+
+def get_watchlist_with_prices(watchlist_codes, user_id=None):
+    """获取观察列表并添加价格信息"""
+    stock_codes = load_stock_codes()
+    memos = load_memos(user_id)
+    
+    # 构建股票列表
+    stocks = []
+    for code in watchlist_codes:
+        stock_info = stock_codes.get(code, {})
+        name = stock_info.get('name', code)
+        stocks.append({'name': name, 'code': code})
+    
+    # 批量获取股票数据
+    stock_data = get_stocks_data_batch(stocks)
+    
+    # 构建返回结果
+    watchlist_list = []
+    for code in watchlist_codes:
+        stock_info = stock_codes.get(code, {})
+        name = stock_info.get('name', code)
+        memo_info = memos.get(code, {})
+        stock_data_item = stock_data.get(code, {})
+        
+        watchlist_list.append({
+            'ticker': name,
+            'code': code,
+            'name': name,
+            'price': stock_data_item.get('price'),
+            'change': stock_data_item.get('change'),
+            'change_percent': stock_data_item.get('change_percent'),
+            'memo': memo_info.get('memo', ''),
+            'updated_at': memo_info.get('updated_at', '')
+        })
+    
+    return {
+        "watchlist": watchlist_list,
+        "count": len(watchlist_list),
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/api/portfolio")
+def get_portfolio(current_user: Optional[dict] = Depends(get_optional_user)):
+    """获取持仓列表（支持登录和未登录状态）"""
+    if current_user:
+        # 已登录用户：从数据库获取个性化数据
+        user_id = current_user['user_id']
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
+                       (user_id, 'portfolio'))
+        row = cursor.fetchone()
+        conn.close()
+        
+        portfolio_codes = json.loads(row[0]) if row else []
+        return get_portfolio_with_prices(portfolio_codes, user_id)
+    else:
+        # 未登录用户：返回默认数据，不包含价格信息
+        data = load_data()
+        portfolio = data.get('portfolio', [])
+        stock_codes = load_stock_codes()
+        memos = load_memos()
+        
+        portfolio_list = []
+        for code in portfolio:
+            stock_info = stock_codes.get(code, {})
+            name = stock_info.get('name', code)
+            memo_info = memos.get(code, {})
+            portfolio_list.append({
+                'ticker': name,
+                'code': code,
+                'name': name,
+                'price': None,
+                'change': None,
+                'change_percent': None,
+                'memo': memo_info.get('memo', ''),
+                'updated_at': memo_info.get('updated_at', '')
+            })
+        
+        return {
+            "portfolio": portfolio_list,
+            "count": len(portfolio_list),
+            "timestamp": datetime.now().isoformat()
+        }
+
+@app.get("/api/watchlist")
+def get_watchlist(current_user: Optional[dict] = Depends(get_optional_user)):
+    """获取观察列表（支持登录和未登录状态）"""
+    if current_user:
+        # 已登录用户：从数据库获取个性化数据
+        user_id = current_user['user_id']
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
+                       (user_id, 'watchlist'))
+        row = cursor.fetchone()
+        conn.close()
+        
+        watchlist_codes = json.loads(row[0]) if row else []
+        return get_watchlist_with_prices(watchlist_codes, user_id)
+    else:
+        # 未登录用户：返回默认数据，不包含价格信息
+        data = load_data()
+        watchlist = data.get('watchlist', [])
+        stock_codes = load_stock_codes()
+        memos = load_memos()
+        
+        watchlist_list = []
+        for code in watchlist:
+            stock_info = stock_codes.get(code, {})
+            name = stock_info.get('name', code)
+            memo_info = memos.get(code, {})
+            watchlist_list.append({
+                'ticker': name,
+                'code': code,
+                'name': name,
+                'price': None,
+                'change': None,
+                'change_percent': None,
+                'memo': memo_info.get('memo', ''),
+                'updated_at': memo_info.get('updated_at', '')
+            })
+        
+        return {
+            "watchlist": watchlist_list,
+            "count": len(watchlist_list),
+            "timestamp": datetime.now().isoformat()
+        }
 
 if __name__ == "__main__":
     import uvicorn

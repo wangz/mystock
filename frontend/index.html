@@ -106,6 +106,38 @@
             color: var(--text-primary);
         }
 
+        .user-dropdown {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+
+        .user-dropdown:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .user-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #409eff;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .user-name {
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+
         .main-content {
             display: flex;
             flex: 1;
@@ -1100,6 +1132,26 @@
             </div>
 
             <div class="header-right">
+                <!-- 未登录显示登录按钮 -->
+                <el-button v-if="!auth.isLoggedIn" type="primary" size="small" @click="showLoginDialog = true">
+                    🔵 登录 / 注册
+                </el-button>
+                
+                <!-- 已登录显示用户信息 -->
+                <el-dropdown v-else @command="handleUserCommand">
+                    <span class="user-dropdown">
+                        <span class="user-avatar">{{ auth.user?.nickname?.[0] || auth.user?.email?.[0] || '?' }}</span>
+                        <span class="user-name">{{ auth.user?.nickname || auth.user?.email || '用户' }}</span>
+                        <span>▼</span>
+                    </span>
+                    <template #dropdown>
+                        <el-dropdown-menu>
+                            <el-dropdown-item command="changePassword">修改密码</el-dropdown-item>
+                            <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+                        </el-dropdown-menu>
+                    </template>
+                </el-dropdown>
+                
                 <button class="theme-toggle" @click="toggleTheme">
                     {{ isGrayscaleMode ? '🎨' : '⚪' }}
                 </button>
@@ -1108,6 +1160,55 @@
                 </el-button>
             </div>
         </div>
+
+        <!-- 登录/注册弹窗 -->
+        <el-dialog v-model="showLoginDialog" title="登录 / 注册" width="420px" :close-on-click-modal="false">
+            <el-tabs v-model="loginDialogActiveTab">
+                <el-tab-pane label="登录" name="login">
+                    <el-form @submit.prevent="handleLogin">
+                        <el-form-item>
+                            <el-input v-model="loginForm.email" type="email" placeholder="邮箱" prefix-icon="Message" />
+                        </el-form-item>
+                        <el-form-item>
+                            <el-input v-model="loginForm.password" type="password" placeholder="密码" show-password prefix-icon="Lock" />
+                        </el-form-item>
+                        <el-form-item>
+                            <el-button type="primary" style="width: 100%;" @click="handleLogin" :loading="loginLoading">
+                                登 录
+                            </el-button>
+                        </el-form-item>
+                    </el-form>
+                    <div style="text-align: center; color: #909399; font-size: 13px;">
+                        还没有账户？<a href="#" @click.prevent="loginDialogActiveTab = 'register'">立即注册</a>
+                    </div>
+                </el-tab-pane>
+                
+                <el-tab-pane label="注册" name="register">
+                    <el-form @submit.prevent="handleRegister">
+                        <el-form-item>
+                            <el-input v-model="registerForm.email" type="email" placeholder="邮箱（用于登录）" prefix-icon="Message" />
+                        </el-form-item>
+                        <el-form-item>
+                            <el-input v-model="registerForm.nickname" placeholder="昵称（可选）" prefix-icon="User" />
+                        </el-form-item>
+                        <el-form-item>
+                            <el-input v-model="registerForm.password" type="password" placeholder="密码（至少6位）" show-password prefix-icon="Lock" />
+                        </el-form-item>
+                        <el-form-item>
+                            <el-input v-model="registerForm.confirmPassword" type="password" placeholder="确认密码" show-password prefix-icon="Lock" />
+                        </el-form-item>
+                        <el-form-item>
+                            <el-button type="success" style="width: 100%;" @click="handleRegister" :loading="registerLoading">
+                                注 册
+                            </el-button>
+                        </el-form-item>
+                    </el-form>
+                    <div style="text-align: center; color: #909399; font-size: 13px;">
+                        已有账户？<a href="#" @click.prevent="loginDialogActiveTab = 'login'">返回登录</a>
+                    </div>
+                </el-tab-pane>
+            </el-tabs>
+        </el-dialog>
 
         <div class="main-content">
             <div class="stock-panel" :style="{ flex: `0 0 ${panelWidths.first}`, maxWidth: `${panelWidths.first}` }">
@@ -2167,6 +2268,7 @@
 
     <script>
         const { createApp, ref, computed, onMounted, onUnmounted, nextTick } = Vue;
+        const ElMessage = ElementPlus.ElMessage;
 
         const app = createApp({
             setup() {
@@ -2345,6 +2447,11 @@
                 };
 
                 const deleteStock = async (listName, index) => {
+                    if (!auth.value.isLoggedIn) {
+                        ElMessage.warning('请先登录');
+                        showLoginDialog.value = true;
+                        return;
+                    }
                     if (!confirm('确定要删除这只股票吗？')) return;
 
                     const list = listName === 'portfolio' ? portfolio : watchlist;
@@ -2389,6 +2496,113 @@
                         });
                     } catch (error) {
                         console.error('保存排序失败:', error);
+                    }
+                };
+
+                // ========== 认证相关 ==========
+                const auth = ref({
+                    token: localStorage.getItem('auth_token') || '',
+                    user: JSON.parse(localStorage.getItem('auth_user') || 'null'),
+                    isLoggedIn: !!localStorage.getItem('auth_token')
+                });
+                const showLoginDialog = ref(false);
+                const loginDialogActiveTab = ref('login');
+                const loginLoading = ref(false);
+                const registerLoading = ref(false);
+                const loginForm = ref({ email: '', password: '' });
+                const registerForm = ref({ email: '', nickname: '', password: '', confirmPassword: '' });
+
+                const handleLogin = async () => {
+                    if (!loginForm.value.email || !loginForm.value.password) {
+                        ElMessage.warning('请输入邮箱和密码');
+                        return;
+                    }
+                    loginLoading.value = true;
+                    try {
+                        const response = await fetch(`${API_BASE}/api/auth/login`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(loginForm.value)
+                        });
+                        const data = await response.json();
+                        if (response.ok) {
+                            auth.value.token = data.token;
+                            auth.value.user = data.user;
+                            auth.value.isLoggedIn = true;
+                            localStorage.setItem('auth_token', data.token);
+                            localStorage.setItem('auth_user', JSON.stringify(data.user));
+                            showLoginDialog.value = false;
+                            loginForm.value = { email: '', password: '' };
+                            ElMessage.success('登录成功');
+                            fetchPrices();
+                        } else {
+                            ElMessage.error(data.detail || '登录失败');
+                        }
+                    } catch (error) {
+                        ElMessage.error('登录失败，请稍后重试');
+                    }
+                    loginLoading.value = false;
+                };
+
+                const handleRegister = async () => {
+                    if (!registerForm.value.email || !registerForm.value.password) {
+                        ElMessage.warning('请输入邮箱和密码');
+                        return;
+                    }
+                    if (registerForm.value.password !== registerForm.value.confirmPassword) {
+                        ElMessage.warning('两次密码输入不一致');
+                        return;
+                    }
+                    if (registerForm.value.password.length < 6) {
+                        ElMessage.warning('密码长度至少6位');
+                        return;
+                    }
+                    registerLoading.value = true;
+                    try {
+                        const response = await fetch(`${API_BASE}/api/auth/register`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                email: registerForm.value.email,
+                                password: registerForm.value.password,
+                                nickname: registerForm.value.nickname
+                            })
+                        });
+                        const data = await response.json();
+                        if (response.ok) {
+                            auth.value.token = data.token;
+                            auth.value.user = data.user;
+                            auth.value.isLoggedIn = true;
+                            localStorage.setItem('auth_token', data.token);
+                            localStorage.setItem('auth_user', JSON.stringify(data.user));
+                            showLoginDialog.value = false;
+                            registerForm.value = { email: '', nickname: '', password: '', confirmPassword: '' };
+                            ElMessage.success('注册成功');
+                            fetchPrices();
+                        } else {
+                            ElMessage.error(data.detail || '注册失败');
+                        }
+                    } catch (error) {
+                        ElMessage.error('注册失败，请稍后重试');
+                    }
+                    registerLoading.value = false;
+                };
+
+                const handleLogout = () => {
+                    auth.value.token = '';
+                    auth.value.user = null;
+                    auth.value.isLoggedIn = false;
+                    localStorage.removeItem('auth_token');
+                    localStorage.removeItem('auth_user');
+                    fetchPrices();
+                    ElMessage.success('已退出登录');
+                };
+
+                const handleUserCommand = (command) => {
+                    if (command === 'logout') {
+                        handleLogout();
+                    } else if (command === 'changePassword') {
+                        ElMessage.info('修改密码功能开发中');
                     }
                 };
 
@@ -2473,6 +2687,25 @@
                     return response.json();
                 };
 
+                // 带认证的Fetch
+                const authFetch = async (url, options = {}) => {
+                    const headers = { ...options.headers };
+                    if (auth.value.token) {
+                        headers['Authorization'] = `Bearer ${auth.value.token}`;
+                    }
+                    const response = await fetch(url, { ...options, headers });
+                    if (response.status === 401) {
+                        auth.value.token = '';
+                        auth.value.user = null;
+                        auth.value.isLoggedIn = false;
+                        localStorage.removeItem('auth_token');
+                        localStorage.removeItem('auth_user');
+                        showLoginDialog.value = true;
+                        throw new Error('请先登录');
+                    }
+                    return response;
+                };
+
                 /* ─────────────────────────────────────────
                    📦 5. 方法函数
                    ───────────────────────────────────────── */
@@ -2480,9 +2713,29 @@
                 // 5.1 数据加载方法
                 const loadStockList = async () => {
                     try {
-                        const data = await fetchJson(`${API_BASE}/api/stock-list`);
-                        portfolio.value = data.portfolio || [];
-                        watchlist.value = data.watchlist || [];
+                        // 根据登录状态选择 API
+                        let portfolioRes, watchlistRes;
+                        
+                        if (auth.value.isLoggedIn && auth.value.token) {
+                            // 已登录：调用需要认证的 API
+                            const [p, w] = await Promise.all([
+                                authFetch(`${API_BASE}/api/portfolio`),
+                                authFetch(`${API_BASE}/api/watchlist`)
+                            ]);
+                            portfolioRes = await p.json();
+                            watchlistRes = await w.json();
+                        } else {
+                            // 未登录：调用公开 API
+                            const [p, w] = await Promise.all([
+                                fetchJson(`${API_BASE}/api/portfolio`),
+                                fetchJson(`${API_BASE}/api/watchlist`)
+                            ]);
+                            portfolioRes = p;
+                            watchlistRes = w;
+                        }
+                        
+                        portfolio.value = portfolioRes.portfolio || [];
+                        watchlist.value = watchlistRes.watchlist || [];
                     } catch (error) {
                         console.error('获取股票列表失败:', error);
                     }
@@ -2498,11 +2751,29 @@
                         second: '2-digit'
                     });
 
-                    // 并行获取所有数据（使用批量API）
-                    const [portfolioRes, watchlistRes] = await Promise.all([
-                        fetchJson(`${API_BASE}/api/portfolio`),
-                        fetchJson(`${API_BASE}/api/watchlist`)
-                    ]);
+                    // 根据登录状态选择 API
+                    let portfolioRes, watchlistRes;
+                    console.log('fetchPrices - auth.isLoggedIn:', auth.value.isLoggedIn, 'token:', auth.value.token ? '有' : '无');
+                    
+                    if (auth.value.isLoggedIn && auth.value.token) {
+                        // 已登录：调用需要认证的 API
+                        console.log('调用认证 API');
+                        const [p, w] = await Promise.all([
+                            authFetch(`${API_BASE}/api/portfolio`),
+                            authFetch(`${API_BASE}/api/watchlist`)
+                        ]);
+                        portfolioRes = await p.json();
+                        watchlistRes = await w.json();
+                    } else {
+                        // 未登录：调用公开 API
+                        console.log('调用公开 API');
+                        const [p, w] = await Promise.all([
+                            fetchJson(`${API_BASE}/api/portfolio`),
+                            fetchJson(`${API_BASE}/api/watchlist`)
+                        ]);
+                        portfolioRes = p;
+                        watchlistRes = w;
+                    }
 
                     // 合并数据，保留 memo 等字段
                     const newPortfolio = portfolioRes.portfolio || [];
@@ -2671,6 +2942,11 @@
                 };
 
                 const addInsight = async () => {
+                    if (!auth.value.isLoggedIn) {
+                        ElMessage.warning('请先登录');
+                        showLoginDialog.value = true;
+                        return;
+                    }
                     if (!insightInput.value.trim()) return;
 
                     const now = new Date();
@@ -2780,6 +3056,11 @@
 
                 // 保存备忘
                 const saveMemo = async () => {
+                    if (!auth.value.isLoggedIn) {
+                        ElMessage.warning('请先登录');
+                        showLoginDialog.value = true;
+                        return;
+                    }
                     if (!currentMemoStock.value) return;
 
                     const stock = currentMemoStock.value;
@@ -2808,6 +3089,11 @@
 
                 // 打开添加股票弹窗
                 const openAddStockModal = (target) => {
+                    if (!auth.value.isLoggedIn) {
+                        ElMessage.warning('请先登录');
+                        showLoginDialog.value = true;
+                        return;
+                    }
                     addStockTarget.value = target;
                     addStockSearch.value = '';
                     addStockResults.value = [];
@@ -3116,6 +3402,11 @@
                 };
 
                 const deleteInsight = async (index) => {
+                    if (!auth.value.isLoggedIn) {
+                        ElMessage.warning('请先登录');
+                        showLoginDialog.value = true;
+                        return;
+                    }
                     try {
                         const response = await fetch(`${API_BASE}/api/insights/${index}`, {
                             method: 'DELETE'
@@ -3409,6 +3700,20 @@
                    📦 7. 返回给模板的属性和方法
                    ───────────────────────────────────────── */
                 return {
+                    // 认证相关
+                    auth,
+                    showLoginDialog,
+                    loginDialogActiveTab,
+                    loginLoading,
+                    registerLoading,
+                    loginForm,
+                    registerForm,
+                    handleLogin,
+                    handleRegister,
+                    handleLogout,
+                    handleUserCommand,
+                    authFetch,
+                    
                     portfolio,
                     watchlist,
                     chatHistory,
