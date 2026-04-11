@@ -5,8 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MyStock - 我的股票</title>
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
-    <!-- 引入拼音匹配库，支持拼音首字母搜索 -->
-    <script src="https://unpkg.com/pinyin-match@1.3.1/dist/pinyin-match.min.js"></script>
 
     <!-- ============================================================
          📦 第一部分：CSS 样式
@@ -2036,7 +2034,7 @@
                 <el-input
                     v-model="addStockSearch"
                     placeholder="输入股票名称或代码搜索..."
-                    @input="searchStock"
+                    @input="debouncedSearchStock"
                     clearable
                 >
                     <template #prefix>
@@ -2469,7 +2467,7 @@
                             showLoginDialog.value = false;
                             loginForm.value = { email: '', password: '' };
                             ElMessage.success('登录成功');
-                            fetchPrices();
+                            location.reload();
                         } else {
                             ElMessage.error(data.detail || '登录失败');
                         }
@@ -2513,7 +2511,7 @@
                             showLoginDialog.value = false;
                             registerForm.value = { email: '', nickname: '', password: '', confirmPassword: '' };
                             ElMessage.success('注册成功');
-                            fetchPrices();
+                            location.reload();
                         } else {
                             ElMessage.error(data.detail || '注册失败');
                         }
@@ -3033,7 +3031,39 @@
                     showAddStockModal.value = true;
                 };
 
-                // 搜索股票（优先本地缓存，备用外部API）
+                // 股票列表缓存
+                let stockCache = null;
+                let stockCacheTime = 0;
+                const CACHE_DURATION = 30 * 60 * 1000; // 30分钟缓存
+
+                // 加载股票列表（带缓存）
+                const loadStockCache = async () => {
+                    const now = Date.now();
+                    if (stockCache && (now - stockCacheTime) < CACHE_DURATION) {
+                        return stockCache;
+                    }
+                    try {
+                        const response = await fetch(`${API_BASE}/api/all-stock-codes`);
+                        const data = await response.json();
+                        stockCache = data.stock_codes || {};
+                        stockCacheTime = now;
+                        return stockCache;
+                    } catch (error) {
+                        console.error('加载股票缓存失败:', error);
+                        return stockCache || {};
+                    }
+                };
+
+                // 防抖函数
+                const debounce = (fn, delay) => {
+                    let timer = null;
+                    return (...args) => {
+                        if (timer) clearTimeout(timer);
+                        timer = setTimeout(() => fn(...args), delay);
+                    };
+                };
+
+                // 搜索股票
                 const searchStock = async () => {
                     const keyword = addStockSearch.value.trim();
                     if (!keyword) {
@@ -3043,236 +3073,52 @@
 
                     addStockLoading.value = true;
                     try {
+                        const allCodes = await loadStockCache();
                         const results = [];
-
-                        // 1. 优先从本地缓存搜索（code为主键）
-                        const response = await fetch(`${API_BASE}/api/all-stock-codes`);
-                        const data = await response.json();
-                        const allCodes = data.stock_codes || {};
-
+                        const seenCodes = new Set();
                         const keywordLower = keyword.toLowerCase();
-                        
+
                         // 检测输入类型
-                        function detectInputType(kw) {
-                            // 纯数字（股票代码）
-                            if (/^\d+$/.test(kw)) return 'code';
-                            // 以 sh/sz/hk 开头（完整代码）
-                            if (/^(sh|sz|hk)\d+/i.test(kw)) return 'full_code';
-                            // 纯字母（可能是拼音）
-                            if (/^[a-zA-Z]+$/.test(kw)) return 'pinyin';
-                            // 包含中文
-                            if (/[\u4e00-\u9fa5]/.test(kw)) return 'chinese';
-                            // 混合（字母+数字）
-                            return 'mixed';
-                        }
-                        
-                        const inputType = detectInputType(keyword);
-                        const isPinyinInput = inputType === 'pinyin';
-                        const isPureCode = inputType === 'code' || inputType === 'full_code';
+                        const isChinese = /[\u4e00-\u9fa5]/.test(keyword);
+                        const isPinyin = /^[a-zA-Z0-9]+$/.test(keyword);
+                        const isCode = /^(sh|sz|hk)\d+/i.test(keyword);
 
-                        // 新数据结构: {code: {name, aliases}}
                         for (const [code, info] of Object.entries(allCodes)) {
-                            let matched = false;
-                            
-                            // 策略1：代码匹配（仅对纯数字或完整代码输入）
-                            if (isPureCode) {
-                                if (code.toLowerCase().includes(keywordLower)) {
-                                    results.push({
-                                        name: info.name,
-                                        code: code,
-                                        type: ''
-                                    });
-                                    matched = true;
-                                }
-                            } else if (!isPinyinInput) {
-                                // 非拼音输入时，进行代码模糊匹配
-                                if (code.toLowerCase().includes(keywordLower)) {
-                                    results.push({
-                                        name: info.name,
-                                        code: code,
-                                        type: ''
-                                    });
-                                    matched = true;
+                            if (seenCodes.has(code)) continue;
+
+                            let matched = null;
+
+                            // 1. 中文名称包含匹配
+                            if (isChinese && info.name && info.name.includes(keyword)) {
+                                matched = { name: info.name, code, type: '' };
+                            }
+                            // 2. 拼音首字母匹配
+                            else if (isPinyin && info.pinyin) {
+                                if (info.pinyin.toLowerCase().startsWith(keywordLower)) {
+                                    matched = { name: info.name, code, type: '' };
                                 }
                             }
-                            
-                            if (matched) continue;
-
-                            // 策略2：中文名称匹配（中文输入或混合输入）
-                            if (info.name && info.name.toLowerCase().includes(keywordLower)) {
-                                results.push({
-                                    name: info.name,
-                                    code: code,
-                                    type: ''
-                                });
-                                continue;
+                            // 3. 代码前缀匹配
+                            else if (isCode && code.toLowerCase().startsWith(keywordLower)) {
+                                matched = { name: info.name, code, type: '' };
                             }
-
-                            // 策略3：别名匹配
-                            if (info.aliases && Array.isArray(info.aliases)) {
+                            // 4. 别名包含匹配
+                            else if (info.aliases && Array.isArray(info.aliases)) {
                                 for (const alias of info.aliases) {
                                     if (alias.toLowerCase().includes(keywordLower)) {
-                                        results.push({
-                                            name: info.name,
-                                            code: code,
-                                            type: ''
-                                        });
-                                        matched = true;
+                                        matched = { name: info.name, code, type: '' };
                                         break;
                                     }
                                 }
                             }
-                            
-                            if (matched) continue;
 
-                            // 策略4：拼音匹配（优先处理拼音输入）
-                            if (info.name && isPinyinInput) {
-                                let pinyinMatched = false;
-                                
-                                // 清理股票名称：移除全角字母、多余空格等
-                                const cleanName = info.name
-                                    .replace(/[Ａ-Ｚ]/g, char => String.fromCharCode(char.charCodeAt(0) - 65248)) // 全角转半角
-                                    .replace(/\s+/g, '')  // 移除所有空格
-                                    .replace(/[　]/g, ''); // 移除全角空格
-                                
-                                // 1. 首先尝试使用PinyinMatch库
-                                if (window.PinyinMatch) {
-                                    const matchResult = window.PinyinMatch.match(info.name, keyword);
-                                    if (matchResult !== false) {
-                                        results.push({
-                                            name: info.name,
-                                            code: code,
-                                            type: ''
-                                        });
-                                        pinyinMatched = true;
-                                    }
-                                }
-                                
-                                // 2. 如果PinyinMatch失败，尝试清理后的名称
-                                if (!pinyinMatched && cleanName !== info.name && window.PinyinMatch) {
-                                    const matchResult = window.PinyinMatch.match(cleanName, keyword);
-                                    if (matchResult !== false) {
-                                        results.push({
-                                            name: info.name,
-                                            code: code,
-                                            type: ''
-                                        });
-                                        pinyinMatched = true;
-                                    }
-                                }
-                                
-                                // 3. 如果还是失败，尝试拼音首字母推导匹配
-                                if (!pinyinMatched) {
-                                    // 对于拼音输入，尝试提取中文部分进行匹配
-                                    const chinesePart = info.name.replace(/[^\u4e00-\u9fa5]/g, '');
-                                    if (chinesePart && window.PinyinMatch) {
-                                        const matchResult = window.PinyinMatch.match(chinesePart, keyword);
-                                        if (matchResult !== false) {
-                                            results.push({
-                                                name: info.name,
-                                                code: code,
-                                                type: ''
-                                            });
-                                            pinyinMatched = true;
-                                        }
-                                    }
-                                }
-                                
-                                // 4. 如果拼音匹配成功，跳过后续检查
-                                if (pinyinMatched) continue;
-                            }
-                        }
-                        
-                        // 特殊处理：对于拼音输入，如果没有匹配结果，尝试更智能的匹配
-                        if (results.length === 0 && isPinyinInput) {
-                            // 尝试将拼音首字母映射到常见股票
-                            const pinyinMap = {
-                                'gzmt': '贵州茅台',
-                                'payh': '平安银行',
-                                'zgpa': '中国平安',
-                                'zsyh': '招商银行',
-                                'zxzq': '中信证券',
-                                'wka': '万科A',
-                                'zgba': '中国宝安',
-                            };
-                            
-                            if (pinyinMap[keyword]) {
-                                for (const [code, info] of Object.entries(allCodes)) {
-                                    if (info.name && info.name.includes(pinyinMap[keyword])) {
-                                        results.push({
-                                            name: info.name,
-                                            code: code,
-                                            type: ''
-                                        });
-                                        break;
-                                    }
-                                }
-                            }
-                            
-                            // 如果还没有结果，尝试外部API作为最后手段
-                            if (results.length === 0) {
-                                // 尝试新浪JSONP API
-                                const sinaUrl = `https://suggest3.sinajs.cn/suggest/type=11,12,13,14&key=${encodeURIComponent(keyword)}`;
-
-                                await new Promise((resolve) => {
-                                    const script = document.createElement('script');
-                                    script.src = sinaUrl;
-                                    script.onload = () => {
-                                        const val = window.suggestvalue || '';
-                                        if (val && val !== '""' && val !== '";"') {
-                                            const items = val.split(',');
-                                            for (let i = 0; i < items.length; i += 5) {
-                                                if (i + 4 < items.length && items[i + 1]) {
-                                                    results.push({
-                                                        name: items[i + 1],
-                                                        code: items[i + 3],
-                                                        type: items[i + 2]
-                                                    });
-                                                }
-                                            }
-                                        }
-                                        resolve();
-                                    };
-                                    script.onerror = resolve;
-                                    setTimeout(resolve, 2000);
-                                    document.head.appendChild(script);
-                                    setTimeout(() => script.remove(), 3000);
-                                });
+                            if (matched) {
+                                seenCodes.add(code);
+                                results.push(matched);
                             }
                         }
 
-                        // 2. 如果本地没有结果且不是拼音输入，尝试外部API
-                        if (results.length === 0 && !isPinyinInput) {
-                            // 尝试新浪JSONP API
-                            const sinaUrl = `https://suggest3.sinajs.cn/suggest/type=11,12,13,14&key=${encodeURIComponent(keyword)}`;
-
-                            await new Promise((resolve) => {
-                                const script = document.createElement('script');
-                                script.src = sinaUrl;
-                                script.onload = () => {
-                                    const val = window.suggestvalue || '';
-                                    if (val && val !== '""' && val !== '";"') {
-                                        const items = val.split(',');
-                                        for (let i = 0; i < items.length; i += 5) {
-                                            if (i + 4 < items.length && items[i + 1]) {
-                                                results.push({
-                                                    name: items[i + 1],
-                                                    code: items[i + 3],
-                                                    type: items[i + 2]
-                                                });
-                                            }
-                                        }
-                                    }
-                                    resolve();
-                                };
-                                script.onerror = resolve;
-                                setTimeout(resolve, 2000);
-                                document.head.appendChild(script);
-                                setTimeout(() => script.remove(), 3000);
-                            });
-                        }
-
-                        addStockResults.value = results.slice(0, 10);
+                        addStockResults.value = results.slice(0, 20);
 
                     } catch (error) {
                         console.error('搜索股票失败:', error);
@@ -3280,6 +3126,9 @@
                     }
                     addStockLoading.value = false;
                 };
+
+                // 防抖版本的搜索
+                const debouncedSearchStock = debounce(searchStock, 200);
 
                 // 选择股票
                 const selectStock = (stock) => {
@@ -3662,7 +3511,7 @@
                     addStockLoading,
                     selectedStock,
                     openAddStockModal,
-                    searchStock,
+                    debouncedSearchStock,
                     selectStock,
                     confirmAddStock,
                     moveUp,

@@ -1,6 +1,5 @@
 """
 数据库初始化模块
-创建 users 和 user_data 表，并迁移旧数据
 """
 
 import sqlite3
@@ -11,11 +10,11 @@ from datetime import datetime
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_FILE = os.path.join(BASE_DIR, "portfolio_data.json")
 MEMOS_FILE = os.path.join(BASE_DIR, "memos.json")
-DB_FILE = os.path.join(BASE_DIR, "finance_data.db")
+USER_DB = os.path.join(BASE_DIR, "user_data.db")
 
 def init_database():
-    """初始化数据库，创建 users 和 user_data 表"""
-    conn = sqlite3.connect(DB_FILE)
+    """初始化用户数据库，创建 users 和 user_data 表"""
+    conn = sqlite3.connect(USER_DB)
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -51,14 +50,14 @@ def init_database():
     print("✅ 数据库表初始化完成")
 
 def migrate_old_data():
-    """迁移旧数据到数据库"""
+    """迁移旧数据到用户数据库"""
     print("\n📦 开始数据迁移...")
     
     if not os.path.exists(DATA_FILE) and not os.path.exists(MEMOS_FILE):
         print("没有找到需要迁移的数据文件，跳过迁移")
         return
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(USER_DB)
     cursor = conn.cursor()
     
     migrated_count = 0

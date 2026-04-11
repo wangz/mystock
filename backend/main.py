@@ -142,15 +142,16 @@ def load_stock_codes():
         conn = sqlite3.connect(FINANCE_DB)
         cursor = conn.cursor()
         
-        cursor.execute('SELECT code, name, aliases FROM stock_codes')
+        cursor.execute('SELECT code, name, aliases, pinyin FROM stock_codes')
         stock_codes = {}
         
         for row in cursor.fetchall():
-            code, name, aliases_json = row
+            code, name, aliases_json, pinyin = row
             aliases = json.loads(aliases_json) if aliases_json else []
             stock_codes[code] = {
                 'name': name,
-                'aliases': aliases
+                'aliases': aliases,
+                'pinyin': pinyin or ''
             }
         
         conn.close()
