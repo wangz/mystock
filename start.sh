@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # MyStock 一键启动脚本
-# 同时启动后端 API 和前端界面
+# 后端同时提供 API 和前端界面
 
 set -e
 
@@ -69,9 +69,15 @@ touch stock_codes.json 2>/dev/null || true
 touch memos.json 2>/dev/null || true
 echo -e "${GREEN}✓${NC} 数据目录就绪"
 
-# 启动后端服务
+# 停止旧服务
 echo ""
-echo -e "${YELLOW}启动后端 API 服务...${NC}"
+echo -e "${YELLOW}停止旧服务...${NC}"
+pkill -f 'python.*main.py' 2>/dev/null || true
+sleep 1
+
+# 启动后端服务（同时提供前端界面）
+echo ""
+echo -e "${YELLOW}启动后端服务（包含前端界面）...${NC}"
 echo -e "${BLUE}----------------------------------------${NC}"
 cd backend
 export NODE_PATH=$(npm root -g 2>/dev/null)
@@ -96,29 +102,6 @@ else
     exit 1
 fi
 
-# 启动前端服务
-echo ""
-echo -e "${YELLOW}启动前端界面...${NC}"
-echo -e "${BLUE}----------------------------------------${NC}"
-cd frontend
-python3 -m http.server 5001 > /tmp/mystock_frontend.log 2>&1 &
-FRONTEND_PID=$!
-cd ..
-
-echo -e "${GREEN}✓${NC} 前端服务已启动 (PID: $FRONTEND_PID)"
-echo -e "${GREEN}✓${NC} 前端日志: /tmp/mystock_frontend.log"
-
-# 等待前端启动
-sleep 2
-
-# 检查前端是否启动成功
-if ps -p $FRONTEND_PID > /dev/null 2>&1; then
-    echo -e "${GREEN}✓${NC} 前端服务运行中"
-else
-    echo -e "${RED}✗${NC} 前端服务启动失败"
-    echo -e "${RED}请检查日志: /tmp/mystock_frontend.log${NC}"
-fi
-
 # 完成
 echo ""
 echo -e "${BLUE}========================================${NC}"
@@ -126,21 +109,22 @@ echo -e "${GREEN}  🎉 MyStock 启动成功！${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 echo -e "📱 访问地址："
-echo -e "  ${GREEN}前端界面: http://localhost:5001${NC}"
+echo -e "  ${GREEN}前端界面: http://localhost:8000${NC}"
 echo -e "  ${GREEN}后端 API:  http://localhost:8000${NC}"
 echo -e "  ${GREEN}API 文档:  http://localhost:8000/docs${NC}"
 echo ""
-echo -e "⚠️  提示："
-echo -e "  - 首次使用请先配置 AI 服务（如需要）"
-echo -e "  - 查看日志: tail -f /tmp/mystock_*.log"
-echo -e "  - 停止服务: pkill -f 'python3.*main.py' && pkill -f 'http.server 5001'"
+echo -e "💡 说明："
+echo -e "  - 后端同时提供前端界面和 API 服务"
+echo -e "  - 支持局域网访问: http://本机IP:8000"
+echo -e "  - 查看日志: tail -f /tmp/mystock_backend.log"
+echo -e "  - 停止服务: pkill -f 'python.*main.py'"
 echo ""
 echo -e "${YELLOW}正在打开浏览器...${NC}"
 
 # 自动打开浏览器（macOS）
 if [[ "$OSTYPE" == "darwin"* ]]; then
     sleep 1
-    open http://localhost:5001
+    open http://localhost:8000
 fi
 
 echo ""

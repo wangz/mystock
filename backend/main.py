@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -296,7 +298,18 @@ def fetch_stock_data_async(ticker: str, code: str):
 # API 路由
 @app.get("/")
 def root():
-    return {"message": "MyStock API", "version": "2.0.0"}
+    """返回前端页面"""
+    frontend_path = os.path.join(BASE_DIR, "frontend", "index.html")
+    return FileResponse(frontend_path)
+
+# 提供静态文件服务
+@app.get("/frontend/{path:path}")
+async def serve_frontend(path: str):
+    """提供前端静态文件"""
+    frontend_file = os.path.join(BASE_DIR, "frontend", path)
+    if os.path.exists(frontend_file):
+        return FileResponse(frontend_file)
+    return {"error": "Not found"}
 
 # 获取股票列表（快速返回，不调用外部API）
 
