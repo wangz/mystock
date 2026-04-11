@@ -2,6 +2,7 @@
 认证模块 - JWT 认证、注册、登录
 """
 
+import os
 import sqlite3
 import bcrypt
 import jwt
@@ -11,7 +12,10 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRE_DAYS, DB_FILE
+from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRE_DAYS
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+USER_DB = os.path.join(BASE_DIR, "user_data.db")
 
 security = HTTPBearer(auto_error=False)
 
@@ -71,7 +75,7 @@ def get_optional_user(credentials: Optional[HTTPAuthorizationCredentials] = Depe
 
 def get_user_by_email(email: str) -> Optional[dict]:
     """根据邮箱获取用户"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(USER_DB)
     cursor = conn.cursor()
     cursor.execute('SELECT user_id, email, password_hash, nickname, created_at FROM users WHERE email = ?', (email,))
     row = cursor.fetchone()
@@ -92,7 +96,7 @@ def create_user(email: str, password: str, nickname: str = "") -> dict:
     user_id = str(uuid.uuid4())
     password_hash = hash_password(password)
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(USER_DB)
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO users (user_id, email, password_hash, nickname, created_at, last_login)
@@ -109,7 +113,7 @@ def create_user(email: str, password: str, nickname: str = "") -> dict:
 
 def update_last_login(user_id: str):
     """更新最后登录时间"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(USER_DB)
     cursor = conn.cursor()
     cursor.execute('UPDATE users SET last_login = ? WHERE user_id = ?', (datetime.now(), user_id))
     conn.commit()
