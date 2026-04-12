@@ -3039,7 +3039,7 @@
                 // 股票列表缓存
                 let stockCache = null;
                 let stockCacheTime = 0;
-                const CACHE_DURATION = 30 * 60 * 1000; // 30分钟缓存
+                const CACHE_DURATION = 8 * 60 * 60 * 1000; // 8小时缓存
 
                 // 加载股票列表（带缓存）
                 const loadStockCache = async () => {
@@ -3133,7 +3133,7 @@
                 };
 
                 // 防抖版本的搜索
-                const debouncedSearchStock = debounce(searchStock, 200);
+                const debouncedSearchStock = debounce(searchStock, 500);
 
                 // 选择股票
                 const selectStock = (stock) => {
