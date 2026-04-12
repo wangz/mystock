@@ -929,18 +929,38 @@ def get_limit_up_analysis(refresh: bool = False):
     set_cache('limit_up_analysis', 'limit_up', analysis, CACHE_DURATION_VERY_SHORT)
     return analysis
 
+# 摘要模式需要的关键字段
+COMPACT_FIELDS_INCREASE = ['股票简称', '大股东变动占流通股比合计', '大股东变动市值合计']
+COMPACT_FIELDS_BUYBACK = ['股票简称', '回购方案进度', '拟回购资金总额']
+COMPACT_FIELDS_EXECUTIVE = ['股票简称', '高管变动占流通股比合计', '高管变动市值合计']
+COMPACT_LIMIT = 10
+
+def filter_compact_fields(items, fields):
+    """过滤出指定字段"""
+    result = []
+    for item in items[:COMPACT_LIMIT]:
+        filtered = {k: item.get(k) for k in fields if item.get(k) is not None}
+        if filtered:
+            result.append(filtered)
+    return result
+
 @app.get("/api/shareholder-activity")
-def get_shareholder_activity(refresh: bool = False):
+def get_shareholder_activity(refresh: bool = False, detail: bool = False):
     """
     获取股东动态数据（增持、回购）
     包括：
     - 股东增持列表
     - 股票回购列表
     - 高管增持列表
+    
+    参数：
+    - detail: True=返回完整数据, False=返回精简数据（摘要模式）
     """
+    cache_key = f'shareholder_activity_{"detail" if detail else "compact"}'
+    
     # 尝试从缓存获取
     if not refresh:
-        cached_data, is_cached, cached_at = get_cache('shareholder_activity')
+        cached_data, is_cached, cached_at = get_cache(cache_key)
         if is_cached and cached_data:
             cached_data['cached'] = True
             cached_data['cached_at'] = cached_at.isoformat() if cached_at else None
@@ -979,7 +999,8 @@ def get_shareholder_activity(refresh: bool = False):
 
         result = {
             'timestamp': datetime.now().isoformat(),
-            'cached': False
+            'cached': False,
+            'detail_mode': detail
         }
 
         # 1. 股东增持
@@ -988,10 +1009,16 @@ def get_shareholder_activity(refresh: bool = False):
             if df is not None and not df.empty:
                 items = [standardize_record(r) for r in df.to_dict('records')]
                 items = sort_by_field(items, '大股东变动市值合计', True)
-                result['shareholding_increase'] = {
-                    'total': len(df),
-                    'items': items
-                }
+                if detail:
+                    result['shareholding_increase'] = {
+                        'total': len(df),
+                        'items': items
+                    }
+                else:
+                    result['shareholding_increase'] = {
+                        'total': len(df),
+                        'items': filter_compact_fields(items, COMPACT_FIELDS_INCREASE)
+                    }
             else:
                 result['shareholding_increase'] = {'total': 0, 'items': []}
         except Exception as e:
@@ -1003,10 +1030,16 @@ def get_shareholder_activity(refresh: bool = False):
             if df is not None and not df.empty:
                 items = [standardize_record(r) for r in df.to_dict('records')]
                 items = sort_by_field(items, '拟回购资金总额', True)
-                result['buyback'] = {
-                    'total': len(df),
-                    'items': items
-                }
+                if detail:
+                    result['buyback'] = {
+                        'total': len(df),
+                        'items': items
+                    }
+                else:
+                    result['buyback'] = {
+                        'total': len(df),
+                        'items': filter_compact_fields(items, COMPACT_FIELDS_BUYBACK)
+                    }
             else:
                 result['buyback'] = {'total': 0, 'items': []}
         except Exception as e:
@@ -1018,17 +1051,23 @@ def get_shareholder_activity(refresh: bool = False):
             if df is not None and not df.empty:
                 items = [standardize_record(r) for r in df.to_dict('records')]
                 items = sort_by_field(items, '高管变动市值合计', True)
-                result['executive_increase'] = {
-                    'total': len(df),
-                    'items': items
-                }
+                if detail:
+                    result['executive_increase'] = {
+                        'total': len(df),
+                        'items': items
+                    }
+                else:
+                    result['executive_increase'] = {
+                        'total': len(df),
+                        'items': filter_compact_fields(items, COMPACT_FIELDS_EXECUTIVE)
+                    }
             else:
                 result['executive_increase'] = {'total': 0, 'items': []}
         except Exception as e:
             result['executive_increase'] = {'total': 0, 'items': [], 'error': str(e)}
 
-        # 保存缓存
-        set_cache('shareholder_activity', 'shareholder_activity', result, CACHE_DURATION_SHORT)
+        # 保存缓存（按模式分开缓存）
+        set_cache(cache_key, 'shareholder_activity', result, CACHE_DURATION_SHORT)
 
         return result
 
@@ -1590,6 +1629,7 @@ def get_watchlist_with_prices(watchlist_codes, user_id=None):
 def get_portfolio(current_user: Optional[dict] = Depends(get_optional_user)):
     """获取持仓列表（支持登录和未登录状态）"""
     user_id = current_user['user_id'] if current_user else DEFAULT_USER_ID
+    print(f"[DEBUG] get_portfolio: current_user={current_user}, user_id={user_id}")
     portfolio_codes = get_user_stock_list(user_id, 'portfolio')
     return get_portfolio_with_prices(portfolio_codes, user_id)
 
@@ -1597,6 +1637,7 @@ def get_portfolio(current_user: Optional[dict] = Depends(get_optional_user)):
 def get_watchlist(current_user: Optional[dict] = Depends(get_optional_user)):
     """获取观察列表（支持登录和未登录状态）"""
     user_id = current_user['user_id'] if current_user else DEFAULT_USER_ID
+    print(f"[DEBUG] get_watchlist: current_user={current_user}, user_id={user_id}")
     watchlist_codes = get_user_stock_list(user_id, 'watchlist')
     return get_watchlist_with_prices(watchlist_codes, user_id)
 

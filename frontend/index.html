@@ -1369,7 +1369,7 @@
                             <el-button size="small" @click="showLimitUpDetail = true" :disabled="!limitUpAnalysis" v-if="activeAnalysisTab === 'limitup'">
                                 详情
                             </el-button>
-                            <el-button size="small" @click="showShareholderDetail = true" :disabled="!shareholderActivity" v-if="activeAnalysisTab === 'shareholder'">
+                            <el-button size="small" @click="showShareholderDetail = true; fetchShareholderActivityDetail()" :disabled="!shareholderActivity" v-if="activeAnalysisTab === 'shareholder'">
                                 详情
                             </el-button>
                             <el-button size="small" @click="showDoubleFiveDetail = true" :disabled="!doubleFiveStocks" v-if="activeAnalysisTab === 'doublefive'">
@@ -1689,16 +1689,16 @@
             width="900px"
             top="5vh"
         >
-            <div v-if="shareholderActivity" class="shareholder-detail">
+            <div v-if="shareholderActivityDetail" class="shareholder-detail">
                 <el-radio-group v-model="shareholderDetailTab" size="small" style="margin-bottom: 15px;">
                     <el-radio-button label="shareholding">
-                        📈 股东增持 ({{ shareholderActivity.shareholding_increase?.total || 0 }})
+                        📈 股东增持 ({{ shareholderActivityDetail.shareholding_increase?.total || 0 }})
                     </el-radio-button>
                     <el-radio-button label="buyback">
-                        🔄 回购概念 ({{ shareholderActivity.buyback?.total || 0 }})
+                        🔄 回购概念 ({{ shareholderActivityDetail.buyback?.total || 0 }})
                     </el-radio-button>
                     <el-radio-button label="executive">
-                        👔 高管增持 ({{ shareholderActivity.executive_increase?.total || 0 }})
+                        👔 高管增持 ({{ shareholderActivityDetail.executive_increase?.total || 0 }})
                     </el-radio-button>
                 </el-radio-group>
 
@@ -1746,7 +1746,7 @@
                 <el-pagination v-show="shareholderDetailTab === 'shareholding'"
                     v-model:current-page="shareholderPage.shareholding"
                     :page-size="pageSize"
-                    :total="shareholderActivity.shareholding_increase?.total || 0"
+                    :total="shareholderActivityDetail.shareholding_increase?.total || 0"
                     layout="prev, pager, next"
                     small
                     style="margin-top: 10px; text-align: center;">
@@ -1754,7 +1754,7 @@
 
                 <!-- 回购概念表格 -->
                 <div v-show="shareholderDetailTab === 'buyback' && !buybackList?.length" style="text-align: center; padding: 20px; color: #909399;">
-                    暂无数据（总计: {{ shareholderActivity.buyback?.total || 0 }}条）
+                    暂无数据（总计: {{ shareholderActivityDetail.buyback?.total || 0 }}条）
                 </div>
                 <el-table v-show="shareholderDetailTab === 'buyback'" :data="buybackList" stripe size="small" max-height="400">
                     <el-table-column label="序号" width="60" align="center">
@@ -1804,7 +1804,7 @@
                 <el-pagination v-show="shareholderDetailTab === 'buyback'"
                     v-model:current-page="shareholderPage.buyback"
                     :page-size="pageSize"
-                    :total="shareholderActivity.buyback?.total || 0"
+                    :total="shareholderActivityDetail.buyback?.total || 0"
                     layout="prev, pager, next"
                     small
                     style="margin-top: 10px; text-align: center;">
@@ -1812,7 +1812,7 @@
 
                 <!-- 高管增持表格 -->
                 <div v-show="shareholderDetailTab === 'executive' && !executiveList?.length" style="text-align: center; padding: 20px; color: #909399;">
-                    暂无数据（总计: {{ shareholderActivity.executive_increase?.total || 0 }}条）
+                    暂无数据（总计: {{ shareholderActivityDetail.executive_increase?.total || 0 }}条）
                 </div>
                 <el-table v-show="shareholderDetailTab === 'executive'" :data="executiveList" stripe size="small" max-height="400">
                     <el-table-column label="序号" width="60" align="center">
@@ -1857,7 +1857,7 @@
                 <el-pagination v-show="shareholderDetailTab === 'executive'"
                     v-model:current-page="shareholderPage.executive"
                     :page-size="pageSize"
-                    :total="shareholderActivity.executive_increase?.total || 0"
+                    :total="shareholderActivityDetail.executive_increase?.total || 0"
                     layout="prev, pager, next"
                     small
                     style="margin-top: 10px; text-align: center;">
@@ -2216,6 +2216,7 @@
                 const limitUpLoading = ref(false);
                 const showLimitUpDetail = ref(false);
                 const shareholderActivity = ref(null);
+                const shareholderActivityDetail = ref(null);
                 const shareholderLoading = ref(false);
                 const showShareholderDetail = ref(false);
                 const shareholderDetailTab = ref('shareholding');
@@ -2255,34 +2256,34 @@
                 });
                 
                 const shareholdingList = computed(() => {
-                    if (!shareholderActivity.value?.shareholding_increase?.items) {
+                    if (!shareholderActivityDetail.value?.shareholding_increase?.items) {
                         console.log('shareholdingList: 无数据');
                         return [];
                     }
                     const start = (shareholderPage.value.shareholding - 1) * pageSize;
-                    const data = shareholderActivity.value.shareholding_increase.items.slice(start, start + pageSize);
+                    const data = shareholderActivityDetail.value.shareholding_increase.items.slice(start, start + pageSize);
                     console.log('shareholdingList:', data.length, '条');
                     return data;
                 });
                 
                 const buybackList = computed(() => {
-                    if (!shareholderActivity.value?.buyback?.items) {
+                    if (!shareholderActivityDetail.value?.buyback?.items) {
                         console.log('buybackList: 无数据');
                         return [];
                     }
                     const start = (shareholderPage.value.buyback - 1) * pageSize;
-                    const data = shareholderActivity.value.buyback.items.slice(start, start + pageSize);
+                    const data = shareholderActivityDetail.value.buyback.items.slice(start, start + pageSize);
                     console.log('buybackList:', data.length, '条');
                     return data;
                 });
                 
                 const executiveList = computed(() => {
-                    if (!shareholderActivity.value?.executive_increase?.items) {
+                    if (!shareholderActivityDetail.value?.executive_increase?.items) {
                         console.log('executiveList: 无数据');
                         return [];
                     }
                     const start = (shareholderPage.value.executive - 1) * pageSize;
-                    const data = shareholderActivity.value.executive_increase.items.slice(start, start + pageSize);
+                    const data = shareholderActivityDetail.value.executive_increase.items.slice(start, start + pageSize);
                     console.log('executiveList:', data.length, '条');
                     return data;
                 });
@@ -3219,14 +3220,14 @@
                     limitUpLoading.value = false;
                 };
 
-                // 获取股东动态数据
+                // 获取股东动态数据（摘要模式，精简数据）
                 const fetchShareholderActivity = async () => {
                     shareholderLoading.value = true;
                     try {
-                        const response = await fetch(`${API_BASE}/api/shareholder-activity`);
+                        const response = await fetch(`${API_BASE}/api/shareholder-activity?detail=false`);
                         if (!response.ok) throw new Error(`HTTP ${response.status}`);
                         const data = await response.json();
-                        console.log('股东动态数据已获取:', {
+                        console.log('股东动态数据已获取(摘要):', {
                             shareholding_increase: data.shareholding_increase?.total,
                             buyback: data.buyback?.total,
                             executive_increase: data.executive_increase?.total
@@ -3237,6 +3238,23 @@
                         ElMessage.error('获取数据失败，请稍后重试');
                     }
                     shareholderLoading.value = false;
+                };
+
+                // 获取股东动态数据（详情模式，完整数据）
+                const fetchShareholderActivityDetail = async () => {
+                    try {
+                        const response = await fetch(`${API_BASE}/api/shareholder-activity?detail=true`);
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        const data = await response.json();
+                        console.log('股东动态数据已获取(详情):', {
+                            shareholding_increase: data.shareholding_increase?.total,
+                            buyback: data.buyback?.total,
+                            executive_increase: data.executive_increase?.total
+                        });
+                        shareholderActivityDetail.value = data;
+                    } catch (error) {
+                        console.error('获取股东动态详情失败:', error);
+                    }
                 };
 
                 // 格式化金额单位
@@ -3471,6 +3489,7 @@
                     limitUpLoading,
                     showLimitUpDetail,
                     shareholderActivity,
+                    shareholderActivityDetail,
                     shareholderLoading,
                     showShareholderDetail,
                     shareholderDetailTab,
@@ -3478,6 +3497,7 @@
                     buybackList,
                     executiveList,
                     fetchShareholderActivity,
+                    fetchShareholderActivityDetail,
                     doubleFiveStocks,
                     doubleFiveLoading,
                     showDoubleFiveDetail,
