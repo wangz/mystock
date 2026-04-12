@@ -2467,7 +2467,9 @@
                             showLoginDialog.value = false;
                             loginForm.value = { email: '', password: '' };
                             ElMessage.success('登录成功');
-                            location.reload();
+                            // 直接加载数据，不刷新页面
+                            loadStockList();
+                            fetchPrices();
                         } else {
                             ElMessage.error(data.detail || '登录失败');
                         }
@@ -2511,7 +2513,9 @@
                             showLoginDialog.value = false;
                             registerForm.value = { email: '', nickname: '', password: '', confirmPassword: '' };
                             ElMessage.success('注册成功');
-                            location.reload();
+                            // 直接加载数据，不刷新页面
+                            loadStockList();
+                            fetchPrices();
                         } else {
                             ElMessage.error(data.detail || '注册失败');
                         }
