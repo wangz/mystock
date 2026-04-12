@@ -3084,28 +3084,33 @@
                         const keywordLower = keyword.toLowerCase();
 
                         // 检测输入类型
-                        const isChinese = /[\u4e00-\u9fa5]/.test(keyword);
-                        const isPinyin = /^[a-zA-Z0-9]+$/.test(keyword);
-                        const isCode = /^(sh|sz|hk)\d+/i.test(keyword);
+                        const isPureCode = /^\d{4,8}$/.test(keyword);  // 纯数字 4-8 位
+                        const isFullCode = /^(sh|sz|hk)\d+/i.test(keyword);  // 完整代码
+                        const isPinyin = /^[a-zA-Z]+$/.test(keyword);  // 纯字母
+                        const isChinese = /[\u4e00-\u9fa5]/.test(keyword);  // 中文
 
                         for (const [code, info] of Object.entries(allCodes)) {
                             if (seenCodes.has(code)) continue;
 
                             let matched = null;
 
-                            // 1. 中文名称包含匹配
-                            if (isChinese && info.name && info.name.includes(keyword)) {
+                            // 1. 代码精确或前缀匹配（纯数字或完整代码）
+                            if (isPureCode || isFullCode) {
+                                const codeLower = code.toLowerCase();
+                                const codeDigits = codeLower.replace(/^(sh|sz|hk)/i, '');
+                                if (codeLower.startsWith(keywordLower) || codeDigits.startsWith(keywordLower)) {
+                                    matched = { name: info.name, code, type: '' };
+                                }
+                            }
+                            // 2. 中文名称包含匹配
+                            else if (isChinese && info.name && info.name.includes(keyword)) {
                                 matched = { name: info.name, code, type: '' };
                             }
-                            // 2. 拼音首字母匹配
+                            // 3. 拼音首字母匹配
                             else if (isPinyin && info.pinyin) {
                                 if (info.pinyin.toLowerCase().startsWith(keywordLower)) {
                                     matched = { name: info.name, code, type: '' };
                                 }
-                            }
-                            // 3. 代码前缀匹配
-                            else if (isCode && code.toLowerCase().startsWith(keywordLower)) {
-                                matched = { name: info.name, code, type: '' };
                             }
                             // 4. 别名包含匹配
                             else if (info.aliases && Array.isArray(info.aliases)) {
