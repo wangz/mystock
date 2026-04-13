@@ -68,14 +68,10 @@ def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depen
 def get_optional_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> Optional[dict]:
     """获取当前用户（可选，不强制）"""
     if credentials is None:
-        print(f"[DEBUG] get_optional_user: credentials is None")
         return None
     
-    print(f"[DEBUG] get_optional_user: credentials={credentials}")
     token = credentials.credentials
-    print(f"[DEBUG] get_optional_user: token={token[:20]}..." if token else "[DEBUG] get_optional_user: token is empty")
     result = decode_token(token)
-    print(f"[DEBUG] get_optional_user: decode result={result}")
     return result
 
 def get_user_by_email(email: str) -> Optional[dict]:

@@ -6,3 +6,8 @@ python-multipart==0.0.6
 httpx==0.26.0
 pandas==2.1.4
 pywencai==0.13.1
+bcrypt==4.1.2
+akshare==1.8.115
+pyjwt==2.8.0
+baostock==0.8.8
+numpy==1.26.4

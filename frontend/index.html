@@ -2257,34 +2257,28 @@
                 
                 const shareholdingList = computed(() => {
                     if (!shareholderActivityDetail.value?.shareholding_increase?.items) {
-                        console.log('shareholdingList: 无数据');
                         return [];
                     }
                     const start = (shareholderPage.value.shareholding - 1) * pageSize;
                     const data = shareholderActivityDetail.value.shareholding_increase.items.slice(start, start + pageSize);
-                    console.log('shareholdingList:', data.length, '条');
                     return data;
                 });
                 
                 const buybackList = computed(() => {
                     if (!shareholderActivityDetail.value?.buyback?.items) {
-                        console.log('buybackList: 无数据');
                         return [];
                     }
                     const start = (shareholderPage.value.buyback - 1) * pageSize;
                     const data = shareholderActivityDetail.value.buyback.items.slice(start, start + pageSize);
-                    console.log('buybackList:', data.length, '条');
                     return data;
                 });
                 
                 const executiveList = computed(() => {
                     if (!shareholderActivityDetail.value?.executive_increase?.items) {
-                        console.log('executiveList: 无数据');
                         return [];
                     }
                     const start = (shareholderPage.value.executive - 1) * pageSize;
                     const data = shareholderActivityDetail.value.executive_increase.items.slice(start, start + pageSize);
-                    console.log('executiveList:', data.length, '条');
                     return data;
                 });
                 const activeAlertTab = ref('focus');
@@ -2692,11 +2686,9 @@
 
                     // 根据登录状态选择 API
                     let portfolioRes, watchlistRes;
-                    console.log('fetchPrices - auth.isLoggedIn:', auth.value.isLoggedIn, 'token:', auth.value.token ? '有' : '无');
                     
                     if (auth.value.isLoggedIn && auth.value.token) {
                         // 已登录：调用需要认证的 API
-                        console.log('调用认证 API');
                         const [p, w] = await Promise.all([
                             authFetch(`${API_BASE}/api/portfolio`),
                             authFetch(`${API_BASE}/api/watchlist`)
@@ -2705,7 +2697,6 @@
                         watchlistRes = w;
                     } else {
                         // 未登录：调用公开 API
-                        console.log('调用公开 API');
                         const [p, w] = await Promise.all([
                             fetchJson(`${API_BASE}/api/portfolio`),
                             fetchJson(`${API_BASE}/api/watchlist`)
@@ -3232,11 +3223,6 @@
                         const response = await fetch(`${API_BASE}/api/shareholder-activity?detail=false`);
                         if (!response.ok) throw new Error(`HTTP ${response.status}`);
                         const data = await response.json();
-                        console.log('股东动态数据已获取(摘要):', {
-                            shareholding_increase: data.shareholding_increase?.total,
-                            buyback: data.buyback?.total,
-                            executive_increase: data.executive_increase?.total
-                        });
                         shareholderActivity.value = data;
                     } catch (error) {
                         console.error('获取股东动态失败:', error);
@@ -3251,11 +3237,6 @@
                         const response = await fetch(`${API_BASE}/api/shareholder-activity?detail=true`);
                         if (!response.ok) throw new Error(`HTTP ${response.status}`);
                         const data = await response.json();
-                        console.log('股东动态数据已获取(详情):', {
-                            shareholding_increase: data.shareholding_increase?.total,
-                            buyback: data.buyback?.total,
-                            executive_increase: data.executive_increase?.total
-                        });
                         shareholderActivityDetail.value = data;
                     } catch (error) {
                         console.error('获取股东动态详情失败:', error);

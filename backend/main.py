@@ -69,9 +69,8 @@ def init_cache_table():
         
         conn.commit()
         conn.close()
-        print("✅ 缓存表初始化完成")
     except Exception as e:
-        print(f"创建缓存表失败：{e}")
+        pass
 
 def get_cache(cache_key: str) -> tuple:
     """
@@ -95,7 +94,6 @@ def get_cache(cache_key: str) -> tuple:
             return data, True, cached_at
         return None, False, None
     except Exception as e:
-        print(f"获取缓存失败: {e}")
         return None, False, None
 
 def set_cache(cache_key: str, data_type: str, data, duration: int = CACHE_DURATION_SHORT):
@@ -120,7 +118,7 @@ def set_cache(cache_key: str, data_type: str, data, duration: int = CACHE_DURATI
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"设置缓存失败: {e}")
+        pass
 
 def clean_expired_cache():
     """清理过期缓存"""
@@ -129,12 +127,9 @@ def clean_expired_cache():
         cursor = conn.cursor()
         cursor.execute('DELETE FROM cache WHERE expire_at < ?', (datetime.now(),))
         conn.commit()
-        deleted = cursor.rowcount
         conn.close()
-        if deleted > 0:
-            print(f"🗑️ 清理了 {deleted} 条过期缓存")
     except Exception as e:
-        print(f"清理过期缓存失败：{e}")
+        pass
 
 def load_stock_codes():
     """加载股票代码信息"""
@@ -157,7 +152,6 @@ def load_stock_codes():
         conn.close()
         return stock_codes
     except Exception as e:
-        print(f"加载 stock_codes 失败: {e}")
         return {}
 
 def get_roe_data(code):
@@ -174,7 +168,6 @@ def get_roe_data(code):
 
         return [{'date': date, 'roe': roe} for date, roe in roe_records]
     except Exception as e:
-        print(f"获取ROE数据失败: {e}")
         return []
 
 # Pydantic 模型
@@ -228,7 +221,6 @@ def get_stock_data(ticker: str, code: str) -> Optional[dict]:
                         }
         return None
     except Exception as e:
-        print(f"Error fetching stock data for {ticker}: {e}")
         return None
 
 
@@ -289,12 +281,7 @@ def get_stocks_data_batch(stocks: list) -> dict:
 
         return result
     except Exception as e:
-        print(f"批量获取股票数据失败: {e}")
         return {}
-
-
-def fetch_stock_data_async(ticker: str, code: str):
-    return get_stock_data(ticker, code)
 
 # API 路由
 @app.get("/")
@@ -339,7 +326,6 @@ def load_memos(user_id=None):
             
             return json.loads(row[0]) if row else {}
         except Exception as e:
-            print(f"加载用户备忘录失败: {e}")
             return {}
     else:
         # 从默认用户加载备忘录（向后兼容）
@@ -354,7 +340,6 @@ def load_memos(user_id=None):
             
             return json.loads(row[0]) if row else {}
         except Exception as e:
-            print(f"加载默认备忘录失败: {e}")
             return {}
 
 
@@ -1453,7 +1438,6 @@ async def startup_event():
     # 初始化缓存
     init_cache_table()
     clean_expired_cache()
-    print("✅ 系统启动完成")
 
 
 # ========== 认证接口 ==========
@@ -1629,7 +1613,6 @@ def get_watchlist_with_prices(watchlist_codes, user_id=None):
 def get_portfolio(current_user: Optional[dict] = Depends(get_optional_user)):
     """获取持仓列表（支持登录和未登录状态）"""
     user_id = current_user['user_id'] if current_user else DEFAULT_USER_ID
-    print(f"[DEBUG] get_portfolio: current_user={current_user}, user_id={user_id}")
     portfolio_codes = get_user_stock_list(user_id, 'portfolio')
     return get_portfolio_with_prices(portfolio_codes, user_id)
 
@@ -1637,7 +1620,6 @@ def get_portfolio(current_user: Optional[dict] = Depends(get_optional_user)):
 def get_watchlist(current_user: Optional[dict] = Depends(get_optional_user)):
     """获取观察列表（支持登录和未登录状态）"""
     user_id = current_user['user_id'] if current_user else DEFAULT_USER_ID
-    print(f"[DEBUG] get_watchlist: current_user={current_user}, user_id={user_id}")
     watchlist_codes = get_user_stock_list(user_id, 'watchlist')
     return get_watchlist_with_prices(watchlist_codes, user_id)
 
