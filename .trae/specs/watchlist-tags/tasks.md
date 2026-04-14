@@ -2,199 +2,254 @@
 
 ## 任务列表
 
-### 阶段一：后端 API 实现
+### 阶段一：数据库设计
 
-- [ ] **任务 1.1**：实现 `GET /api/watchlist-tags` 接口
-  - 从数据库获取用户的所有标签
-  - 返回标签列表和数量
+* [ ] **任务 1.1**：创建 user\_tags 表
 
-- [ ] **任务 1.2**：实现 `POST /api/watchlist-tags` 接口
-  - 创建新标签（名称、颜色）
-  - 验证标签名称唯一性
-  - 保存到数据库
+  * 创建 `user_tags` 表结构
 
-- [ ] **任务 1.3**：实现 `DELETE /api/watchlist-tags/{tag_name}` 接口
-  - 删除指定标签
-  - 从所有股票的标签列表中移除该标签
+  * 添加索引
 
-- [ ] **任务 1.4**：实现 `PUT /api/watchlist-tags/{ticker}` 接口
-  - 为指定股票设置标签
-  - 验证标签是否存在
+* [ ] **任务 1.2**：修改 user\_data 表的 watchlist 格式
 
-- [ ] **任务 1.5**：修改 `GET /api/watchlist` 接口
-  - 支持 `tag` 查询参数进行筛选
-  - 在返回数据中增加 `tags` 字段
+  * 将 watchlist 从 `["code1", "code2"]` 改为 `[{"code": "code1", "tags": []}]`
 
-- [ ] **任务 1.6**：修改 `POST /api/watchlist/{ticker}` 接口
-  - 支持创建时传入 `tags` 参数
+  * 兼容旧数据迁移
 
-### 阶段二：前端 UI 实现
+* [ ] **任务 1.3**：预设标签初始化
 
-- [ ] **任务 2.1**：创建标签管理组件
-  - 显示所有标签列表
-  - 每个标签显示为彩色芯片
-  - 提供删除按钮
+  * 新用户注册时自动创建预设标签
 
-- [ ] **任务 2.2**：创建添加标签对话框
-  - 输入标签名称
-  - 选择标签颜色（6 种预设）
-  - 验证输入
+### 阶段二：数据迁移
 
-- [ ] **任务 2.3**：修改观察仓股票列表显示
-  - 每行显示股票对应的标签
-  - 标签可点击触发筛选
+* [ ] **任务 2.1**：创建数据迁移脚本
 
-- [ ] **任务 2.4**：实现标签筛选功能
-  - 点击标签筛选观察仓列表
-  - 显示筛选状态指示器
-  - 提供清除筛选按钮
+  * 创建 `migrate_watchlist_tags.py`
 
-- [ ] **任务 2.5**：修改添加股票对话框
-  - 添加标签选择区域
-  - 支持多选标签
-  - 支持创建新标签
+  * 迁移现有 watchlist 数据格式
 
-- [ ] **任务 2.6**：修改编辑股票功能
-  - 支持修改股票的标签
+  * 为现有用户初始化预设标签
 
-### 阶段三：数据库迁移脚本
+* [ ] **任务 2.2**：编写迁移脚本使用说明
 
-- [ ] **任务 3.1**：创建数据库迁移脚本
-  - 创建 `migrations/001_add_watchlist_tags.py` 迁移脚本
-  - 定义向上的迁移操作（添加标签表/数据结构）
-  - 定义向下的迁移操作（回滚标签数据）
-  - 添加迁移版本记录机制
+  * 说明迁移前准备工作
 
-- [ ] **任务 3.2**：编写迁移脚本执行脚本
-  - 创建 `migrations/run_migration.py` 执行脚本
-  - 支持版本检查和状态记录
-  - 支持增量迁移（只执行未执行的迁移）
-  - 添加迁移日志记录
+  * 说明迁移步骤
 
-- [ ] **任务 3.3**：编写生产环境部署指南
-  - 创建 `MIGRATION_GUIDE.md` 文档
-  - 说明如何在生产环境执行迁移
-  - 提供回滚步骤和注意事项
-  - 添加常见问题解答
+  * 说明回滚步骤（可选）
 
-- [ ] **任务 3.4**：创建数据验证脚本
-  - 验证迁移后数据完整性
-  - 验证现有数据兼容性
-  - 生成迁移报告
+### 阶段三：后端 API
 
-### 阶段四：测试
+* [ ] **任务 3.1**：实现 `GET /api/watchlist-tags`
 
-- [ ] **任务 4.1**：添加单元测试
-  - 测试后端 API
-  - 测试标签 CRUD 操作
-  - 测试筛选功能
+  * 获取用户的所有标签（区分预设/自定义）
 
-- [ ] **任务 4.2**：手动测试
-  - 测试完整标签管理流程
-  - 测试标签筛选流程
-  - 测试多用户数据隔离
+* [ ] **任务 3.2**：实现 `POST /api/watchlist-tags`
 
-- [ ] **任务 4.3**：数据库迁移测试
-  - 测试迁移脚本执行
-  - 测试回滚功能
-  - 测试数据验证脚本
+  * 创建自定义标签（验证名称唯一性）
 
----
+* [ ] **任务 3.3**：实现 `PUT /api/watchlist-tags/{name}`
+
+  * 启用/禁用预设标签
+
+  * 更新自定义标签（名称、颜色）
+
+* [ ] **任务 3.4**：实现 `DELETE /api/watchlist-tags/{name}`
+
+  * 删除自定义标签
+
+  * 从所有观察仓中移除该标签
+
+* [ ] **任务 3.5**：修改 `GET /api/watchlist`
+
+  * 返回数据包含 tags 字段
+
+* [ ] **任务 3.6**：修改 `POST /api/watchlist/{code}`
+
+  * 创建时支持可选的 tags 参数
+
+* [ ] **任务 3.7**：实现 `PUT /api/watchlist-tags/{code}`
+
+  * 更新指定股票的标签
+
+### 阶段四：前端 UI
+
+* [ ] **任务 4.1**：创建标签筛选栏
+
+  * 显示已启用标签
+
+  * 点击切换筛选
+
+  * 显示/隐藏设置按钮
+
+* [ ] **任务 4.2**：创建标签设置弹窗
+
+  * 预设标签启用/禁用切换
+
+  * 自定义标签列表
+
+  * 添加自定义标签表单
+
+* [ ] **任务 4.3**：修改观察列表表格
+
+  * 添加标签列
+
+  * 显示每只股票的标签
+
+* [ ] **任务 4.4**：实现标签筛选逻辑
+
+  * computed 属性过滤
+
+  * 筛选状态指示器
+
+* [ ] **任务 4.5**：修改添加股票弹窗
+
+  * 添加标签选择区域
+
+* [ ] **任务 4.6**：实现股票标签编辑
+
+  * 点击标签打开编辑弹窗
+
+***
 
 ## 任务依赖关系
 
 ```
-任务 1.1 ─┬─> 任务 1.2 ─> 任务 1.3 ─> 任务 1.4
-          │
-          └> 任务 1.5 ─> 任务 1.6
-          
-任务 1.1-1.6 ──> 任务 2.1-2.6 ──> 任务 3.1-3.4 ──> 任务 4.1-4.3
+阶段一（1.1-1.3）
+    ↓
+阶段二（2.1-2.2）← 依赖阶段一完成
+    ↓
+阶段三（3.1-3.7）← 依赖阶段一完成
+    ↓
+阶段四（4.1-4.6）← 依赖阶段三 API 完成
 ```
 
-**关键依赖**：
-- 任务 3.1-3.4（数据库迁移脚本）必须在任务 1.1-1.6（后端 API）完成后进行
-- 任务 4.1-4.3（测试）必须在所有开发任务完成后进行
-- 任务 3.3（生产环境部署指南）必须在任务 3.1-3.2 完成后进行
-
----
+***
 
 ## 技术实现提示
 
-### 后端实现
+### 后端
 
-1. **标签存储结构**：
-   - 在 `user_data` 表中，`data_type='watchlist_tags'`
-   - 存储格式：`{"tags": [{"name": "...", "color": "...", "created_at": "..."}]}`
+1. **user\_tags 表初始化**：
 
-2. **股票标签存储**：
-   - 观察仓股票标签存储在股票的元数据中
-   - 可以创建新的 `data_type='watchlist_tags_meta'` 来存储每只股票的标签
-   - 或在返回观察仓列表时，从单独的表中查询
+```python
+def init_preset_tags(user_id):
+    preset_tags = [
+        ('科技', '#409EFF', 1, 1),
+        ('医药', '#67C23A', 1, 1),
+        ('消费', '#E6A23C', 1, 1),
+        ('金融', '#909399', 1, 1),
+        ('地产', '#F56C6C', 1, 0),
+        ('新能源', '#00C853', 1, 1),
+        ('AI', '#9C27B0', 1, 0),
+    ]
+    # INSERT INTO user_tags ...
+```
 
-3. **API 依赖注入**：
-   - 所有标签 API 需要 `get_current_user` 依赖
-   - 确保用户数据隔离
+1. **观察列表数据格式**：
 
-### 数据库迁移实现
+```python
+# 旧格式
+["sh600519", "sz300054"]
 
-1. **迁移脚本结构**：
-   ```python
-   # migrations/001_add_watchlist_tags.py
-   VERSION = '001'
-   
-   def upgrade(db_path):
-       """向上迁移：添加标签数据结构"""
-       # 1. 创建迁移记录表（如果不存在）
-       # 2. 记录迁移版本
-       # 3. 不修改现有数据结构（使用 JSON 字段扩展）
-       pass
-   
-   def downgrade(db_path):
-       """向下迁移：移除标签数据"""
-       # 1. 标记数据为已归档
-       # 2. 移除迁移记录
-       pass
-   ```
+# 新格式
+[
+    {"code": "sh600519", "tags": ["科技", "消费"]},
+    {"code": "sz300054", "tags": ["化工"]}
+]
+```
 
-2. **迁移执行器**：
-   ```python
-   # migrations/run_migration.py
-   class MigrationRunner:
-       def __init__(self, db_path):
-           self.db_path = db_path
-           self.migrations_dir = 'migrations'
-       
-       def get_current_version(self):
-           """获取当前数据库版本"""
-           pass
-       
-       def get_pending_migrations(self):
-           """获取待执行的迁移"""
-           pass
-       
-       def run_migrations(self):
-           """执行所有待执行的迁移"""
-           pass
-   ```
+1. **删除标签时清理观察列表**：
 
-3. **数据验证**：
-   - 验证所有用户数据的标签字段存在且格式正确
-   - 验证现有观察仓数据的兼容性
-   - 生成迁移报告（成功/失败/警告数量）
+```python
+def remove_tag_from_watchlist(user_id, tag_name):
+    watchlist = get_watchlist_codes(user_id)  # 返回新格式
+    for item in watchlist:
+        if tag_name in item['tags']:
+            item['tags'].remove(tag_name)
+    save_watchlist(user_id, watchlist)
+```
 
-### 前端实现
+### 数据迁移脚本
 
-1. **状态管理**：
-   - 添加 `watchlistTags` 响应式变量存储标签列表
-   - 添加 `selectedTag` 响应式变量存储当前筛选标签
-   - 添加 `showTagDialog` 控制添加标签弹窗
+```python
+# migrate_watchlist_tags.py
 
-2. **组件结构**：
-   - 标签管理区：观察仓面板顶部
-   - 筛选指示器：紧跟标签管理区
-   - 观察仓列表：现有列表基础上增加标签显示列
+USER_DB = 'user_data.db'
 
-3. **交互设计**：
-   - 标签悬停显示删除按钮
-   - 点击标签切换筛选状态
-   - 添加/编辑标签使用 Element Plus Dialog
+def migrate_watchlist_format():
+    """迁移 watchlist 数据格式"""
+    conn = sqlite3.connect(USER_DB)
+    cursor = conn.cursor()
+    
+    # 1. 创建 user_tags 表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_tags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            color TEXT NOT NULL DEFAULT '#409EFF',
+            is_preset INTEGER DEFAULT 0,
+            is_enabled INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, name)
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_user_tags_lookup 
+        ON user_tags(user_id, is_enabled)
+    ''')
+    
+    # 2. 获取所有有 watchlist 的用户
+    cursor.execute('''
+        SELECT DISTINCT user_id, json_value 
+        FROM user_data 
+        WHERE data_type = 'watchlist'
+    ''')
+    users = cursor.fetchall()
+    
+    # 3. 迁移每个用户的 watchlist
+    for user_id, old_value in users:
+        # 旧格式: ["sh600519", "sz300054"]
+        # 新格式: [{"code": "sh600519", "tags": []}]
+        old_list = json.loads(old_value) if old_value else []
+        new_list = [{"code": code, "tags": []} for code in old_list]
+        
+        # 更新 watchlist
+        cursor.execute('''
+            INSERT OR REPLACE INTO user_data 
+            (user_id, data_type, data_key, json_value, updated_at)
+            VALUES (?, 'watchlist', '', ?, ?)
+        ''', (user_id, json.dumps(new_list), datetime.now()))
+        
+        # 为用户创建预设标签
+        init_preset_tags_for_user(cursor, user_id)
+    
+    conn.commit()
+    conn.close()
+    print(f"迁移完成，共处理 {len(users)} 个用户")
+
+if __name__ == '__main__':
+    migrate_watchlist_format()
+```
+
+### 前端
+
+1. **状态变量**：
+
+```javascript
+const userTags = ref([]);           // 用户所有标签
+const enabledTags = computed(() => userTags.value.filter(t => t.is_enabled));
+const selectedTag = ref(null);      // 当前筛选标签
+const showTagSettings = ref(false); // 设置弹窗
+```
+
+1. **筛选逻辑**：
+
+```javascript
+const filteredWatchlist = computed(() => {
+    if (!selectedTag.value) return watchlist.value;
+    return watchlist.value.filter(s => s.tags?.includes(selectedTag.value));
+});
+```
+
