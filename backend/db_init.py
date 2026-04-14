@@ -45,6 +45,25 @@ def init_database():
         ON user_data(user_id, data_type)
     ''')
     
+    # 创建用户标签表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_tags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            color TEXT NOT NULL DEFAULT '#409EFF',
+            is_preset INTEGER DEFAULT 0,
+            is_enabled INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, name)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_user_tags_lookup 
+        ON user_tags(user_id, is_enabled)
+    ''')
+    
     conn.commit()
     conn.close()
     print("✅ 数据库表初始化完成")

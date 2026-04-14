@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -302,14 +302,36 @@ async def serve_frontend(path: str):
 # 获取股票列表（快速返回，不调用外部API）
 
 def get_user_stock_list(user_id: str, data_type: str) -> list:
-    """从数据库获取用户的股票列表（portfolio 或 watchlist）"""
+    """从数据库获取用户的股票列表（portfolio 或 watchlist）
+    返回新格式：[{code: 'xxx', tags: []}] 或 [{code: 'xxx', shares: N}]"""
     conn = sqlite3.connect(USER_DB)
     cursor = conn.cursor()
     cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?',
                    (user_id, data_type))
     row = cursor.fetchone()
     conn.close()
-    return json.loads(row[0]) if row else []
+    
+    if not row or not row[0]:
+        return []
+    
+    data = json.loads(row[0])
+    
+    # 兼容旧格式
+    if not data:
+        return []
+    
+    # 检测是否是旧格式（旧格式是简单数组，如 ["sh600519", "sz300054"]）
+    if isinstance(data, list) and len(data) > 0:
+        first = data[0]
+        if isinstance(first, str):
+            # 旧格式，转换为新格式
+            if data_type == 'watchlist':
+                return [{'code': code, 'tags': []} for code in data]
+            elif data_type == 'portfolio':
+                return [{'code': code, 'shares': 0} for code in data]
+    
+    # 新格式，直接返回
+    return data
 
 def load_memos(user_id=None):
     """加载备忘录数据（支持按用户加载）"""
@@ -437,8 +459,8 @@ def remove_portfolio(ticker: str, current_user: dict = Depends(get_current_user)
 
 # 添加观察列表
 @app.post("/api/watchlist/{ticker}")
-def add_watchlist(ticker: str, current_user: dict = Depends(get_current_user)):
-    """添加观察列表（需登录）"""
+def add_watchlist(ticker: str, tags: List[str] = Body(None), current_user: dict = Depends(get_current_user)):
+    """添加观察列表（需登录），支持添加标签"""
     user_id = current_user['user_id']
     conn = sqlite3.connect(USER_DB)
     cursor = conn.cursor()
@@ -447,7 +469,11 @@ def add_watchlist(ticker: str, current_user: dict = Depends(get_current_user)):
     cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
                    (user_id, 'watchlist'))
     row = cursor.fetchone()
-    watchlist_codes = json.loads(row[0]) if row else []
+    watchlist = json.loads(row[0]) if row else []
+    
+    # 兼容旧格式
+    if watchlist and isinstance(watchlist[0], str):
+        watchlist = [{'code': code, 'tags': []} for code in watchlist]
     
     # 检查股票代码是否存在
     stock_codes = load_stock_codes()
@@ -456,21 +482,22 @@ def add_watchlist(ticker: str, current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="股票代码不存在")
     
     # 检查是否已在观察列表中
-    if ticker in watchlist_codes:
+    if any(item.get('code') == ticker for item in watchlist):
         conn.close()
         raise HTTPException(status_code=400, detail="股票已在观察列表中")
     
-    # 添加到观察列表
-    watchlist_codes.append(ticker)
+    # 添加到观察列表（新格式）
+    new_item = {'code': ticker, 'tags': tags if tags else []}
+    watchlist.append(new_item)
     cursor.execute('''
         INSERT OR REPLACE INTO user_data 
         (user_id, data_type, data_key, json_value, updated_at)
         VALUES (?, ?, '', ?, ?)
-    ''', (user_id, 'watchlist', json.dumps(watchlist_codes), datetime.now()))
+    ''', (user_id, 'watchlist', json.dumps(watchlist), datetime.now()))
     
     conn.commit()
     conn.close()
-    return {"success": True, "message": f"已添加 {ticker} 到观察列表"}
+    return {"success": True, "message": f"已添加 {ticker} 到观察列表", "item": new_item}
 
 # 移除观察列表
 @app.delete("/api/watchlist/{ticker}")
@@ -484,26 +511,268 @@ def remove_watchlist(ticker: str, current_user: dict = Depends(get_current_user)
     cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', 
                    (user_id, 'watchlist'))
     row = cursor.fetchone()
-    if not row:
+    if not row or not row[0]:
         conn.close()
         raise HTTPException(status_code=404, detail="股票不在观察列表中")
     
-    watchlist_codes = json.loads(row[0])
-    if ticker not in watchlist_codes:
+    watchlist = json.loads(row[0])
+    
+    # 兼容旧格式
+    if watchlist and isinstance(watchlist[0], str):
         conn.close()
         raise HTTPException(status_code=404, detail="股票不在观察列表中")
     
-    # 从观察列表中移除
-    watchlist_codes.remove(ticker)
+    # 查找并移除
+    found = False
+    for i, item in enumerate(watchlist):
+        if item.get('code') == ticker:
+            watchlist.pop(i)
+            found = True
+            break
+    
+    if not found:
+        conn.close()
+        raise HTTPException(status_code=404, detail="股票不在观察列表中")
+    
     cursor.execute('''
         INSERT OR REPLACE INTO user_data 
         (user_id, data_type, data_key, json_value, updated_at)
         VALUES (?, ?, '', ?, ?)
-    ''', (user_id, 'watchlist', json.dumps(watchlist_codes), datetime.now()))
+    ''', (user_id, 'watchlist', json.dumps(watchlist), datetime.now()))
     
     conn.commit()
     conn.close()
     return {"success": True, "message": f"已移除 {ticker}"}
+
+# ==================== 标签管理 API ====================
+
+# 预设标签配置
+PRESET_TAGS = [
+    {'name': '科技', 'color': '#409EFF', 'is_preset': True, 'is_enabled': True},
+    {'name': '医药', 'color': '#67C23A', 'is_preset': True, 'is_enabled': True},
+    {'name': '消费', 'color': '#E6A23C', 'is_preset': True, 'is_enabled': True},
+    {'name': '金融', 'color': '#909399', 'is_preset': True, 'is_enabled': True},
+    {'name': '地产', 'color': '#F56C6C', 'is_preset': True, 'is_enabled': False},
+    {'name': '新能源', 'color': '#00C853', 'is_preset': True, 'is_enabled': True},
+    {'name': 'AI', 'color': '#9C27B0', 'is_preset': True, 'is_enabled': False},
+]
+
+def get_user_tags(user_id: str) -> list:
+    """获取用户的所有标签"""
+    conn = sqlite3.connect(USER_DB)
+    cursor = conn.cursor()
+    cursor.execute('SELECT name, color, is_preset, is_enabled FROM user_tags WHERE user_id = ?', (user_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    if rows:
+        return [{'name': r[0], 'color': r[1], 'is_preset': bool(r[2]), 'is_enabled': bool(r[3])} for r in rows]
+    # 如果没有标签，返回预设标签并初始化
+    init_preset_tags(user_id)
+    return PRESET_TAGS.copy()
+
+def init_preset_tags(user_id: str):
+    """初始化预设标签"""
+    conn = sqlite3.connect(USER_DB)
+    cursor = conn.cursor()
+    for tag in PRESET_TAGS:
+        cursor.execute('''
+            INSERT OR IGNORE INTO user_tags (user_id, name, color, is_preset, is_enabled)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (user_id, tag['name'], tag['color'], 1 if tag['is_preset'] else 0, 1 if tag['is_enabled'] else 0))
+    conn.commit()
+    conn.close()
+
+def remove_tag_from_watchlist(user_id: str, tag_name: str):
+    """从观察列表中移除指定标签"""
+    conn = sqlite3.connect(USER_DB)
+    cursor = conn.cursor()
+    cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', (user_id, 'watchlist'))
+    row = cursor.fetchone()
+    if row and row[0]:
+        watchlist = json.loads(row[0])
+        for item in watchlist:
+            if 'tags' in item and tag_name in item['tags']:
+                item['tags'].remove(tag_name)
+        cursor.execute('''
+            INSERT OR REPLACE INTO user_data (user_id, data_type, data_key, json_value, updated_at)
+            VALUES (?, 'watchlist', '', ?, ?)
+        ''', (user_id, json.dumps(watchlist), datetime.now()))
+        conn.commit()
+    conn.close()
+
+@app.get("/api/watchlist-tags")
+def get_watchlist_tags(current_user: dict = Depends(get_current_user)):
+    """获取用户的所有标签"""
+    user_id = current_user['user_id']
+    tags = get_user_tags(user_id)
+    preset_tags = [t for t in tags if t['is_preset']]
+    custom_tags = [t for t in tags if not t['is_preset']]
+    return {
+        'tags': tags,
+        'preset_tags': preset_tags,
+        'custom_tags': custom_tags,
+        'count': len(tags)
+    }
+
+@app.post("/api/watchlist-tags")
+def create_watchlist_tag(
+    name: str = Body(...),
+    color: str = Body('#409EFF'),
+    current_user: dict = Depends(get_current_user)
+):
+    """创建自定义标签"""
+    user_id = current_user['user_id']
+    if not name or len(name) > 20:
+        raise HTTPException(status_code=400, detail="标签名称长度必须在1-20字符之间")
+    
+    conn = sqlite3.connect(USER_DB)
+    cursor = conn.cursor()
+    
+    # 检查是否已存在
+    cursor.execute('SELECT id FROM user_tags WHERE user_id = ? AND name = ?', (user_id, name))
+    if cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=400, detail="标签已存在")
+    
+    cursor.execute('''
+        INSERT INTO user_tags (user_id, name, color, is_preset, is_enabled)
+        VALUES (?, ?, ?, 0, 1)
+    ''', (user_id, name, color))
+    conn.commit()
+    conn.close()
+    
+    return {'success': True, 'tag': {'name': name, 'color': color, 'is_preset': False, 'is_enabled': True}}
+
+@app.put("/api/watchlist-tags/{tag_name}")
+def update_watchlist_tag(
+    tag_name: str,
+    is_enabled: bool = Body(None),
+    new_name: str = Body(None),
+    new_color: str = Body(None),
+    current_user: dict = Depends(get_current_user)
+):
+    """更新标签（启用/禁用，或修改名称颜色）"""
+    user_id = current_user['user_id']
+    conn = sqlite3.connect(USER_DB)
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT name, color, is_preset FROM user_tags WHERE user_id = ? AND name = ?', (user_id, tag_name))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="标签不存在")
+    
+    old_name, old_color, is_preset = row
+    
+    # 预设标签只能修改启用状态
+    if is_preset:
+        if is_enabled is not None:
+            cursor.execute('UPDATE user_tags SET is_enabled = ? WHERE user_id = ? AND name = ?',
+                         (1 if is_enabled else 0, user_id, tag_name))
+            conn.commit()
+        conn.close()
+        return {'success': True, 'message': '预设标签已更新'}
+    else:
+        # 自定义标签可以修改名称和颜色
+        updates = []
+        params = []
+        if new_name:
+            updates.append('name = ?')
+            params.append(new_name)
+            # 同时更新观察列表中的标签名称
+            _update_tag_name_in_watchlist(conn, cursor, user_id, tag_name, new_name)
+            tag_name = new_name
+        if new_color:
+            updates.append('color = ?')
+            params.append(new_color)
+        if is_enabled is not None:
+            updates.append('is_enabled = ?')
+            params.append(1 if is_enabled else 0)
+        
+        if updates:
+            sql = f"UPDATE user_tags SET {', '.join(updates)} WHERE user_id = ? AND name = ?"
+            cursor.execute(sql, (*params, user_id, tag_name))
+            conn.commit()
+        conn.close()
+        return {'success': True, 'message': '标签已更新'}
+
+def _update_tag_name_in_watchlist(conn, cursor, user_id, old_name, new_name):
+    """更新观察列表中的标签名称"""
+    cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', (user_id, 'watchlist'))
+    row = cursor.fetchone()
+    if row and row[0]:
+        watchlist = json.loads(row[0])
+        for item in watchlist:
+            if 'tags' in item and old_name in item['tags']:
+                item['tags'] = [new_name if t == old_name else t for t in item['tags']]
+        cursor.execute('''
+            INSERT OR REPLACE INTO user_data (user_id, data_type, data_key, json_value, updated_at)
+            VALUES (?, 'watchlist', '', ?, ?)
+        ''', (user_id, json.dumps(watchlist), datetime.now()))
+
+@app.delete("/api/watchlist-tags/{tag_name}")
+def delete_watchlist_tag(tag_name: str, current_user: dict = Depends(get_current_user)):
+    """删除自定义标签"""
+    user_id = current_user['user_id']
+    conn = sqlite3.connect(USER_DB)
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT is_preset FROM user_tags WHERE user_id = ? AND name = ?', (user_id, tag_name))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="标签不存在")
+    
+    if row[0]:  # is_preset = True
+        conn.close()
+        raise HTTPException(status_code=400, detail="预设标签不能删除")
+    
+    cursor.execute('DELETE FROM user_tags WHERE user_id = ? AND name = ?', (user_id, tag_name))
+    conn.commit()
+    conn.close()
+    
+    # 从观察列表中移除该标签
+    remove_tag_from_watchlist(user_id, tag_name)
+    
+    return {'success': True, 'message': f'标签 {tag_name} 已删除'}
+
+@app.put("/api/watchlist/{code}/tags")
+def update_stock_tags(
+    code: str,
+    tags: List[str] = Body(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """更新股票的标签"""
+    user_id = current_user['user_id']
+    conn = sqlite3.connect(USER_DB)
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', (user_id, 'watchlist'))
+    row = cursor.fetchone()
+    if not row or not row[0]:
+        conn.close()
+        raise HTTPException(status_code=404, detail="股票不在观察列表中")
+    
+    watchlist = json.loads(row[0])
+    found = False
+    for item in watchlist:
+        if item.get('code') == code:
+            item['tags'] = tags
+            found = True
+            break
+    
+    if not found:
+        conn.close()
+        raise HTTPException(status_code=404, detail="股票不在观察列表中")
+    
+    cursor.execute('''
+        INSERT OR REPLACE INTO user_data (user_id, data_type, data_key, json_value, updated_at)
+        VALUES (?, 'watchlist', '', ?, ?)
+    ''', (user_id, json.dumps(watchlist), datetime.now()))
+    conn.commit()
+    conn.close()
+    
+    return {'success': True, 'code': code, 'tags': tags}
 
 # 感悟管理
 @app.get("/api/insights")
@@ -1569,14 +1838,26 @@ def get_portfolio_with_prices(portfolio_codes, user_id=None):
         "timestamp": datetime.now().isoformat()
     }
 
-def get_watchlist_with_prices(watchlist_codes, user_id=None):
-    """获取观察列表并添加价格信息"""
+def get_watchlist_with_prices(watchlist_data, user_id=None):
+    """获取观察列表并添加价格信息
+    watchlist_data: 新格式 [{code: 'xxx', tags: []}] 或旧格式 ['code1', 'code2']
+    """
     stock_codes = load_stock_codes()
     memos = load_memos(user_id)
     
+    # 提取代码列表
+    if watchlist_data and isinstance(watchlist_data[0], dict) and 'code' in watchlist_data[0]:
+        # 新格式
+        codes = [item['code'] for item in watchlist_data]
+        tags_map = {item['code']: item.get('tags', []) for item in watchlist_data}
+    else:
+        # 旧格式
+        codes = watchlist_data if watchlist_data else []
+        tags_map = {}
+    
     # 构建股票列表
     stocks = []
-    for code in watchlist_codes:
+    for code in codes:
         stock_info = stock_codes.get(code, {})
         name = stock_info.get('name', code)
         stocks.append({'name': name, 'code': code})
@@ -1586,7 +1867,7 @@ def get_watchlist_with_prices(watchlist_codes, user_id=None):
     
     # 构建返回结果
     watchlist_list = []
-    for code in watchlist_codes:
+    for code in codes:
         stock_info = stock_codes.get(code, {})
         name = stock_info.get('name', code)
         memo_info = memos.get(code, {})
@@ -1600,7 +1881,8 @@ def get_watchlist_with_prices(watchlist_codes, user_id=None):
             'change': stock_data_item.get('change'),
             'change_percent': stock_data_item.get('change_percent'),
             'memo': memo_info.get('memo', ''),
-            'updated_at': memo_info.get('updated_at', '')
+            'updated_at': memo_info.get('updated_at', ''),
+            'tags': tags_map.get(code, [])
         })
     
     return {

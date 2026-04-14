@@ -1256,13 +1256,37 @@
                     <div class="panel-title">
                         <span class="watch-header">👁️</span>
                         <span>观察</span>
-                        <el-tag type="warning" size="small">{{ watchlist.length }} 只</el-tag>
+                        <el-tag type="warning" size="small">{{ filteredWatchlist.length }} 只</el-tag>
+                        <el-tag v-if="selectedTag" type="primary" size="small" closable @close="selectedTag = null">
+                            {{ selectedTag }}
+                        </el-tag>
                     </div>
-                    <el-button size="small" @click="openAddStockModal('watchlist')" title="添加股票">➕</el-button>
+                    <div>
+                        <el-button size="small" @click="showTagSettings = true" title="标签设置" v-if="auth.isLoggedIn">🏷️</el-button>
+                        <el-button size="small" @click="openAddStockModal('watchlist')" title="添加股票">➕</el-button>
+                    </div>
                 </div>
 
-                <div v-if="watchlist.length === 0" class="empty-state">
-                    暂无观察股票
+                <!-- 标签筛选栏 -->
+                <div v-if="auth.isLoggedIn && enabledTags.length > 0" class="tag-filter-bar" style="padding: 8px 12px; border-bottom: 1px solid #f0f0f0; display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                    <span class="tag-chip" 
+                          :class="{active: selectedTag === null}"
+                          @click="selectedTag = null"
+                          style="background: #f5f7fa; color: #606266; cursor: pointer; padding: 2px 10px; border-radius: 12px; font-size: 12px;">
+                        全部
+                    </span>
+                    <span v-for="tag in enabledTags" 
+                          :key="tag.name"
+                          class="tag-chip"
+                          :style="{background: tag.color + '20', color: tag.color, cursor: 'pointer', padding: '2px 10px', borderRadius: '12px', fontSize: '12px'}"
+                          :class="{active: selectedTag === tag.name}"
+                          @click="selectedTag = selectedTag === tag.name ? null : tag.name">
+                        {{ tag.name }}
+                    </span>
+                </div>
+
+                <div v-if="filteredWatchlist.length === 0" class="empty-state">
+                    {{ selectedTag ? '该标签下暂无股票' : '暂无观察股票' }}
                 </div>
 
                 <div v-else class="stock-table-container">
@@ -1272,10 +1296,11 @@
                                 <th>名称</th>
                                 <th style="text-align: right;">现价</th>
                                 <th style="text-align: right;">涨跌幅</th>
+                                <th v-if="auth.isLoggedIn">标签</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="(stock, index) in watchlist" :key="stock.ticker" class="stock-row" :class="{ 'highlight-stock': Math.abs(stock.change_percent) >= 3 && stock.price !== null }">
+                            <tr v-for="(stock, index) in filteredWatchlist" :key="stock.ticker || stock.code" class="stock-row" :class="{ 'highlight-stock': Math.abs(stock.change_percent) >= 3 && stock.price !== null }">
                                 <td :style="Math.abs(stock.change_percent) >= 3 && stock.price !== null ? 'font-weight: 700; cursor: pointer;' : 'font-weight: 400; cursor: pointer;'" @click="fetchStockDetail(stock.code)">
                                     {{ stock.name }}
                                 </td>
@@ -1289,10 +1314,19 @@
                                     <div class="action-buttons">
                                         <button class="action-btn" @click="moveTop('watchlist', index)" :disabled="index === 0" title="置顶">⤒</button>
                                         <button class="action-btn" @click="moveUp('watchlist', index)" :disabled="index === 0" title="上移">⇧</button>
-                                        <button class="action-btn" @click="moveDown('watchlist', index)" :disabled="index === watchlist.length - 1" title="下移">⇩</button>
+                                        <button class="action-btn" @click="moveDown('watchlist', index)" :disabled="index === filteredWatchlist.length - 1" title="下移">⇩</button>
+                                        <button class="action-btn" @click="openStockTags(stock)" title="标签" v-if="auth.isLoggedIn">🏷️</button>
                                         <button class="action-btn action-btn-delete" @click="deleteStock('watchlist', index)" title="删除">×</button>
                                         <button class="action-btn action-btn-memo" @click="openMemo('watchlist', index)" title="备忘">{{ stock.memo ? '📝' : '📄' }}</button>
                                     </div>
+                                </td>
+                                <td v-if="auth.isLoggedIn" style="min-width: 100px;">
+                                    <span v-for="tag in (stock.tags || [])" 
+                                          :key="tag"
+                                          :style="{background: getTagColor(tag) + '20', color: getTagColor(tag), padding: '1px 6px', borderRadius: '8px', fontSize: '11px', marginRight: '4px', cursor: 'pointer'}"
+                                          @click="selectedTag = selectedTag === tag ? null : tag">
+                                        {{ tag }}
+                                    </span>
                                 </td>
                             </tr>
                         </tbody>
@@ -2199,6 +2233,67 @@
                 暂无数据
             </div>
         </el-dialog>
+
+        <!-- 标签设置弹窗 -->
+        <el-dialog v-model="showTagSettings" title="🏷️ 标签设置" width="450px">
+            <div v-if="auth.isLoggedIn">
+                <div style="margin-bottom: 16px;">
+                    <div style="color: #606266; font-size: 13px; margin-bottom: 8px;">预设标签（点击切换启用/禁用）</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <span v-for="tag in userTags.filter(t => t.is_preset)" 
+                              :key="tag.name"
+                              @click="toggleTagEnabled(tag.name, !tag.is_enabled)"
+                              :style="{background: tag.is_enabled ? tag.color + '20' : '#f5f7fa', color: tag.is_enabled ? tag.color : '#c0c4cc', padding: '4px 12px', borderRadius: '16px', fontSize: '13px', cursor: 'pointer', border: tag.is_enabled ? '1px solid ' + tag.color : '1px dashed #dcdfe6'}">
+                            {{ tag.name }} {{ tag.is_enabled ? '✓' : '' }}
+                        </span>
+                    </div>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <div style="color: #606266; font-size: 13px; margin-bottom: 8px;">自定义标签</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+                        <span v-for="tag in userTags.filter(t => !t.is_preset)" 
+                              :key="tag.name"
+                              :style="{background: tag.color + '20', color: tag.color, padding: '4px 12px', borderRadius: '16px', fontSize: '13px'}">
+                            {{ tag.name }}
+                            <span @click.stop="deleteTag(tag.name)" style="margin-left: 4px; cursor: pointer;">×</span>
+                        </span>
+                        <span v-if="!userTags || userTags.filter(t => !t.is_preset).length === 0" style="color: #c0c4cc; font-size: 13px;">暂无自定义标签</span>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <el-input v-model="newTagName" placeholder="输入标签名称" size="small" style="flex: 1;" @keyup.enter="createNewTag"></el-input>
+                        <el-color-picker v-model="newTagColor" size="small"></el-color-picker>
+                        <el-button size="small" type="primary" @click="createNewTag" :disabled="!newTagName.trim()">添加</el-button>
+                    </div>
+                </div>
+            </div>
+            <div v-else style="text-align: center; padding: 20px; color: #909399;">
+                请先登录以使用标签功能
+            </div>
+        </el-dialog>
+
+        <!-- 股票标签编辑弹窗 -->
+        <el-dialog v-model="showStockTagDialog" :title="'🏷️ ' + (editingStockTags?.name || '') + ' - 标签设置'" width="400px">
+            <div v-if="editingStockTags">
+                <div style="margin-bottom: 16px;">
+                    <div style="color: #606266; font-size: 13px; margin-bottom: 8px;">选择标签</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <span v-for="tag in enabledTags" 
+                              :key="tag.name"
+                              @click="toggleStockTag(tag.name)"
+                              :style="{background: editingStockTags.selectedTags?.includes(tag.name) ? tag.color + '30' : '#f5f7fa', color: editingStockTags.selectedTags?.includes(tag.name) ? tag.color : '#909399', padding: '4px 12px', borderRadius: '16px', fontSize: '13px', cursor: 'pointer', border: editingStockTags.selectedTags?.includes(tag.name) ? '1px solid ' + tag.color : '1px solid #dcdfe6'}">
+                            {{ tag.name }}
+                        </span>
+                    </div>
+                </div>
+                <div v-if="editingStockTags && editingStockTags.selectedTags?.length > 0" style="color: #909399; font-size: 12px;">
+                    已选：{{ editingStockTags.selectedTags.join(', ') }}
+                </div>
+            </div>
+            <template #footer>
+                <el-button @click="showStockTagDialog = false">取消</el-button>
+                <el-button type="primary" @click="saveStockTags">保存</el-button>
+            </template>
+        </el-dialog>
     </div>
 
     <!-- ============================================================
@@ -2250,6 +2345,15 @@
                     executive: 1
                 });
                 const pageSize = 15;
+                
+                // 标签相关状态
+                const userTags = ref([]);
+                const selectedTag = ref(null);
+                const showTagSettings = ref(false);
+                const editingStockTags = ref(null);
+                const showStockTagDialog = ref(false);
+                const newTagName = ref('');
+                const newTagColor = ref('#409EFF');
 
                 // 双五股票数据
                 const doubleFiveStocks = ref(null);
@@ -2746,7 +2850,154 @@
                     });
 
                     priceLoading.value = false;
+                    fetchUserTags();
                 };
+
+                // 获取用户标签
+                const fetchUserTags = async () => {
+                    if (!auth.value.isLoggedIn) {
+                        userTags.value = [];
+                        return;
+                    }
+                    try {
+                        const response = await authFetch(`${API_BASE}/api/watchlist-tags`);
+                        if (response && response.tags) {
+                            userTags.value = response.tags;
+                        }
+                    } catch (error) {
+                        console.error('获取标签失败:', error);
+                    }
+                };
+
+                // 创建标签
+                const createTag = async (name, color) => {
+                    try {
+                        const response = await authFetch(`${API_BASE}/api/watchlist-tags`, {
+                            method: 'POST',
+                            body: JSON.stringify({ name, color })
+                        });
+                        if (response && response.success) {
+                            ElMessage.success('标签创建成功');
+                            fetchUserTags();
+                        }
+                    } catch (error) {
+                        ElMessage.error('创建标签失败');
+                    }
+                };
+
+                // 创建新标签（从弹窗）
+                const createNewTag = async () => {
+                    if (!newTagName.value.trim()) return;
+                    await createTag(newTagName.value.trim(), newTagColor.value);
+                    newTagName.value = '';
+                    newTagColor.value = '#409EFF';
+                };
+
+                // 删除标签
+                const deleteTag = async (tagName) => {
+                    try {
+                        const response = await authFetch(`${API_BASE}/api/watchlist-tags/${encodeURIComponent(tagName)}`, {
+                            method: 'DELETE'
+                        });
+                        if (response && response.success) {
+                            ElMessage.success('标签已删除');
+                            fetchUserTags();
+                            // 如果删除的是当前筛选的标签，清除筛选
+                            if (selectedTag.value === tagName) {
+                                selectedTag.value = null;
+                            }
+                        }
+                    } catch (error) {
+                        ElMessage.error('删除标签失败');
+                    }
+                };
+
+                // 切换标签启用状态
+                const toggleTagEnabled = async (tagName, isEnabled) => {
+                    try {
+                        await authFetch(`${API_BASE}/api/watchlist-tags/${encodeURIComponent(tagName)}`, {
+                            method: 'PUT',
+                            body: JSON.stringify({ is_enabled: isEnabled })
+                        });
+                        fetchUserTags();
+                    } catch (error) {
+                        console.error('更新标签失败:', error);
+                    }
+                };
+
+                // 更新股票标签
+                const updateStockTags = async (code, tags) => {
+                    try {
+                        await authFetch(`${API_BASE}/api/watchlist/${code}/tags`, {
+                            method: 'PUT',
+                            body: JSON.stringify(tags)
+                        });
+                        // 更新本地数据
+                        const item = watchlist.value.find(s => s.code === code);
+                        if (item) {
+                            item.tags = tags;
+                        }
+                    } catch (error) {
+                        console.error('更新股票标签失败:', error);
+                    }
+                };
+
+                // 打开股票标签编辑
+                const openStockTags = (stock) => {
+                    editingStockTags.value = { ...stock, selectedTags: [...(stock.tags || [])] };
+                    showStockTagDialog.value = true;
+                };
+
+                // 切换股票标签
+                const toggleStockTag = (tagName) => {
+                    if (!editingStockTags.value) return;
+                    const tags = editingStockTags.value.selectedTags;
+                    const index = tags.indexOf(tagName);
+                    if (index > -1) {
+                        tags.splice(index, 1);
+                    } else {
+                        tags.push(tagName);
+                    }
+                };
+
+                // 保存股票标签
+                const saveStockTags = async () => {
+                    if (!editingStockTags.value) return;
+                    const code = editingStockTags.value.code;
+                    const tags = editingStockTags.value.selectedTags;
+                    try {
+                        await authFetch(`${API_BASE}/api/watchlist/${code}/tags`, {
+                            method: 'PUT',
+                            body: JSON.stringify(tags)
+                        });
+                        // 更新本地数据
+                        const item = watchlist.value.find(s => s.code === code);
+                        if (item) {
+                            item.tags = tags;
+                        }
+                        showStockTagDialog.value = false;
+                        ElMessage.success('标签已更新');
+                    } catch (error) {
+                        ElMessage.error('更新标签失败');
+                    }
+                };
+
+                // 过滤后的观察列表
+                const filteredWatchlist = computed(() => {
+                    if (!selectedTag.value) return watchlist.value;
+                    return watchlist.value.filter(s => s.tags && s.tags.includes(selectedTag.value));
+                });
+
+                // 获取标签颜色
+                const getTagColor = (tagName) => {
+                    const tag = userTags.value.find(t => t.name === tagName);
+                    return tag ? tag.color : '#909399';
+                };
+
+                // 计算属性：已启用的标签
+                const enabledTags = computed(() => {
+                    return userTags.value.filter(t => t.is_enabled);
+                });
 
                 // 股票详情
                 const fetchStockDetail = async (code) => {
@@ -3566,7 +3817,26 @@
                     fetchLimitUpAnalysis,
                     fetchInsights,
                     addInsight,
-                    deleteInsight
+                    deleteInsight,
+                    userTags,
+                    selectedTag,
+                    showTagSettings,
+                    editingStockTags,
+                    showStockTagDialog,
+                    newTagName,
+                    newTagColor,
+                    enabledTags,
+                    filteredWatchlist,
+                    getTagColor,
+                    openStockTags,
+                    toggleStockTag,
+                    saveStockTags,
+                    createNewTag,
+                    createTag,
+                    deleteTag,
+                    toggleTagEnabled,
+                    updateStockTags,
+                    fetchUserTags
                 };
             }
         });
