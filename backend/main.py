@@ -1623,6 +1623,9 @@ def get_watchlist(current_user: Optional[dict] = Depends(get_optional_user)):
     watchlist_codes = get_user_stock_list(user_id, 'watchlist')
     return get_watchlist_with_prices(watchlist_codes, user_id)
 
+# 挂载静态文件目录
+app.mount("/", StaticFiles(directory=os.path.join(BASE_DIR, "frontend"), html=True), name="static")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
