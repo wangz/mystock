@@ -3,8 +3,12 @@ Pydantic 数据模型 - 认证相关
 """
 
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
+
+class TagsBody(BaseModel):
+    """接受对象格式的请求体"""
+    tags: List[str] = []
 
 class RegisterRequest(BaseModel):
     email: EmailStr

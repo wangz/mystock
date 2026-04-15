@@ -2520,7 +2520,8 @@
                                 body: JSON.stringify({
                                     name: stock.name,
                                     code: stock.code,
-                                    from: listName
+                                    from: listName,
+                                    tags: stock.tags || []  // 保存标签信息
                                 })
                             });
                             list.value.splice(index, 1);
@@ -2543,7 +2544,14 @@
 
                 const saveStockOrder = async (listName, stocks) => {
                     try {
-                        const order = stocks.map(s => s.code);
+                        // 保存完整的数据结构（包括标签信息）
+                        const order = stocks.map(s => {
+                            if (listName === 'portfolio') {
+                                return { code: s.code, shares: s.shares || 0 };
+                            } else {
+                                return { code: s.code, tags: s.tags || [] };
+                            }
+                        });
                         await authFetch(`${API_BASE}/api/stock-order/${listName}`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -2751,6 +2759,10 @@
                     if (auth.value.token) {
                         headers['Authorization'] = `Bearer ${auth.value.token}`;
                     }
+                    // 如果有 body 但没有设置 Content-Type，自动设置为 application/json
+                    if (options.body && !headers['Content-Type']) {
+                        headers['Content-Type'] = 'application/json';
+                    }
                     const response = await fetch(url, { ...options, headers });
                     if (response.status === 401) {
                         auth.value.token = '';
@@ -2928,9 +2940,10 @@
                 // 更新股票标签
                 const updateStockTags = async (code, tags) => {
                     try {
+                        const cleanTags = Array.isArray(tags) ? [...tags] : tags;
                         await authFetch(`${API_BASE}/api/watchlist/${code}/tags`, {
                             method: 'PUT',
-                            body: JSON.stringify(tags)
+                            body: JSON.stringify({ tags: cleanTags })
                         });
                         // 更新本地数据
                         const item = watchlist.value.find(s => s.code === code);
@@ -2964,11 +2977,11 @@
                 const saveStockTags = async () => {
                     if (!editingStockTags.value) return;
                     const code = editingStockTags.value.code;
-                    const tags = editingStockTags.value.selectedTags;
+                    const tags = [...editingStockTags.value.selectedTags];  // 转换为普通数组
                     try {
                         await authFetch(`${API_BASE}/api/watchlist/${code}/tags`, {
                             method: 'PUT',
-                            body: JSON.stringify(tags)
+                            body: JSON.stringify({ tags })
                         });
                         // 更新本地数据
                         const item = watchlist.value.find(s => s.code === code);
@@ -3404,7 +3417,7 @@
                 };
 
                 // 防抖版本的搜索
-                const debouncedSearchStock = debounce(searchStock, 2000);
+                const debouncedSearchStock = debounce(searchStock, 1000);
 
                 // 选择股票
                 const selectStock = (stock) => {
@@ -3437,7 +3450,8 @@
                             price: null,
                             previous_close: null,
                             change: null,
-                            change_percent: null
+                            change_percent: null,
+                            tags: []  // 添加空的标签数组
                         });
 
                         showAddStockModal.value = false;
@@ -3445,11 +3459,18 @@
                         addStockSearch.value = '';
                         addStockResults.value = [];
 
+                        // 保存完整的列表（包括标签信息）
                         await authFetch(`${API_BASE}/api/stock-order/${target}`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                order: list.value.map(s => s.code)
+                                order: list.value.map(s => {
+                                    if (target === 'portfolio') {
+                                        return { code: s.code, shares: s.shares || 0 };
+                                    } else {
+                                        return { code: s.code, tags: s.tags || [] };
+                                    }
+                                })
                             })
                         });
                     } catch (error) {

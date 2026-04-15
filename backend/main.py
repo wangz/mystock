@@ -20,7 +20,7 @@ from auth import (
     create_token, verify_password,
     get_user_by_email, create_user, update_last_login
 )
-from models import RegisterRequest, LoginRequest, TokenResponse, UserInfo, ChangePasswordRequest
+from models import RegisterRequest, LoginRequest, TokenResponse, UserInfo, ChangePasswordRequest, TagsBody
 
 app = FastAPI(title="MyStock API", version="2.0.0")
 
@@ -303,7 +303,8 @@ async def serve_frontend(path: str):
 
 def get_user_stock_list(user_id: str, data_type: str) -> list:
     """从数据库获取用户的股票列表（portfolio 或 watchlist）
-    返回新格式：[{code: 'xxx', tags: []}] 或 [{code: 'xxx', shares: N}]"""
+    返回新格式：[{code: 'xxx', tags: []}] 或 [{code: 'xxx', shares: N}]
+    兼容旧格式、混合格式"""
     conn = sqlite3.connect(USER_DB)
     cursor = conn.cursor()
     cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?',
@@ -320,18 +321,20 @@ def get_user_stock_list(user_id: str, data_type: str) -> list:
     if not data:
         return []
     
-    # 检测是否是旧格式（旧格式是简单数组，如 ["sh600519", "sz300054"]）
-    if isinstance(data, list) and len(data) > 0:
-        first = data[0]
-        if isinstance(first, str):
+    # 转换为统一的新格式
+    result = []
+    for item in data:
+        if isinstance(item, dict) and 'code' in item:
+            # 已经是新格式
+            result.append(item)
+        elif isinstance(item, str):
             # 旧格式，转换为新格式
             if data_type == 'watchlist':
-                return [{'code': code, 'tags': []} for code in data]
+                result.append({'code': item, 'tags': []})
             elif data_type == 'portfolio':
-                return [{'code': code, 'shares': 0} for code in data]
+                result.append({'code': item, 'shares': 0})
     
-    # 新格式，直接返回
-    return data
+    return result
 
 def load_memos(user_id=None):
     """加载备忘录数据（支持按用户加载）"""
@@ -601,9 +604,9 @@ def remove_tag_from_watchlist(user_id: str, tag_name: str):
     conn.close()
 
 @app.get("/api/watchlist-tags")
-def get_watchlist_tags(current_user: dict = Depends(get_current_user)):
-    """获取用户的所有标签"""
-    user_id = current_user['user_id']
+def get_watchlist_tags(current_user: Optional[dict] = Depends(get_optional_user)):
+    """获取用户的所有标签（支持登录和未登录状态）"""
+    user_id = current_user['user_id'] if current_user else DEFAULT_USER_ID
     tags = get_user_tags(user_id)
     preset_tags = [t for t in tags if t['is_preset']]
     custom_tags = [t for t in tags if not t['is_preset']]
@@ -618,10 +621,10 @@ def get_watchlist_tags(current_user: dict = Depends(get_current_user)):
 def create_watchlist_tag(
     name: str = Body(...),
     color: str = Body('#409EFF'),
-    current_user: dict = Depends(get_current_user)
+    current_user: Optional[dict] = Depends(get_optional_user)
 ):
-    """创建自定义标签"""
-    user_id = current_user['user_id']
+    """创建自定义标签（支持登录和未登录状态）"""
+    user_id = current_user['user_id'] if current_user else DEFAULT_USER_ID
     if not name or len(name) > 20:
         raise HTTPException(status_code=400, detail="标签名称长度必须在1-20字符之间")
     
@@ -649,10 +652,10 @@ def update_watchlist_tag(
     is_enabled: bool = Body(None),
     new_name: str = Body(None),
     new_color: str = Body(None),
-    current_user: dict = Depends(get_current_user)
+    current_user: Optional[dict] = Depends(get_optional_user)
 ):
-    """更新标签（启用/禁用，或修改名称颜色）"""
-    user_id = current_user['user_id']
+    """更新标签（启用/禁用，或修改名称颜色，支持登录和未登录状态）"""
+    user_id = current_user['user_id'] if current_user else DEFAULT_USER_ID
     conn = sqlite3.connect(USER_DB)
     cursor = conn.cursor()
     
@@ -711,9 +714,9 @@ def _update_tag_name_in_watchlist(conn, cursor, user_id, old_name, new_name):
         ''', (user_id, json.dumps(watchlist), datetime.now()))
 
 @app.delete("/api/watchlist-tags/{tag_name}")
-def delete_watchlist_tag(tag_name: str, current_user: dict = Depends(get_current_user)):
-    """删除自定义标签"""
-    user_id = current_user['user_id']
+def delete_watchlist_tag(tag_name: str, current_user: Optional[dict] = Depends(get_optional_user)):
+    """删除自定义标签（支持登录和未登录状态）"""
+    user_id = current_user['user_id'] if current_user else DEFAULT_USER_ID
     conn = sqlite3.connect(USER_DB)
     cursor = conn.cursor()
     
@@ -739,11 +742,13 @@ def delete_watchlist_tag(tag_name: str, current_user: dict = Depends(get_current
 @app.put("/api/watchlist/{code}/tags")
 def update_stock_tags(
     code: str,
-    tags: List[str] = Body(...),
-    current_user: dict = Depends(get_current_user)
+    body: TagsBody,  # 接受对象格式
+    current_user: Optional[dict] = Depends(get_optional_user)
 ):
-    """更新股票的标签"""
-    user_id = current_user['user_id']
+    """更新股票的标签（支持登录和未登录状态）"""
+    user_id = current_user['user_id'] if current_user else DEFAULT_USER_ID
+    tags = body.tags
+    
     conn = sqlite3.connect(USER_DB)
     cursor = conn.cursor()
     
@@ -755,8 +760,16 @@ def update_stock_tags(
     
     watchlist = json.loads(row[0])
     found = False
-    for item in watchlist:
-        if item.get('code') == code:
+    for i, item in enumerate(watchlist):
+        # 兼容旧格式（字符串）和新格式（字典）
+        if isinstance(item, str):
+            # 旧格式：字符串，需要转换为新格式
+            if item == code:
+                watchlist[i] = {'code': code, 'tags': tags}
+                found = True
+                break
+        elif isinstance(item, dict) and item.get('code') == code:
+            # 新格式：字典
             item['tags'] = tags
             found = True
             break
@@ -916,6 +929,7 @@ def add_to_history(stock_data: dict, current_user: dict = Depends(get_current_us
             'name': name,
             'code': code,
             'from': stock_data.get('from'),
+            'tags': stock_data.get('tags', []),  # 保存标签信息
             'deleted_at': datetime.now().isoformat()
         }
         history.insert(0, history_entry)
@@ -963,17 +977,45 @@ def restore_stock(restore_data: dict, current_user: dict = Depends(get_current_u
     conn = sqlite3.connect(USER_DB)
     cursor = conn.cursor()
 
+    # 从历史记录中获取标签信息
+    tags = []
+    if history_index is not None:
+        cursor.execute('SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', (user_id, 'history'))
+        row = cursor.fetchone()
+        history = json.loads(row[0]) if row else []
+        
+        if 0 <= history_index < len(history):
+            history_entry = history[history_index]
+            tags = history_entry.get('tags', [])
+
     # 添加到原列表
     cursor.execute(f'SELECT json_value FROM user_data WHERE user_id = ? AND data_type = ?', (user_id, from_list))
     row = cursor.fetchone()
     stock_list = json.loads(row[0]) if row else []
-
-    if code not in stock_list:
-        stock_list.append(code)
-        cursor.execute('''
-            INSERT OR REPLACE INTO user_data (user_id, data_type, data_key, json_value, updated_at)
-            VALUES (?, ?, '', ?, ?)
-        ''', (user_id, from_list, json.dumps(stock_list), datetime.now()))
+    
+    # 检查股票是否已存在，并收集需要添加的标签
+    code_exists = False
+    for i, item in enumerate(stock_list):
+        if isinstance(item, dict) and item.get('code') == code:
+            # 已存在且是新格式，更新标签
+            code_exists = True
+            if tags:
+                item['tags'] = tags
+            break
+        elif isinstance(item, str) and item == code:
+            # 已存在但是旧格式，需要转换为新格式
+            code_exists = True
+            stock_list[i] = {'code': code, 'tags': tags}
+            break
+    
+    if not code_exists:
+        # 新增股票
+        stock_list.append({'code': code, 'tags': tags})
+    
+    cursor.execute('''
+        INSERT OR REPLACE INTO user_data (user_id, data_type, data_key, json_value, updated_at)
+        VALUES (?, ?, '', ?, ?)
+    ''', (user_id, from_list, json.dumps(stock_list), datetime.now()))
 
     # 从历史记录中删除
     if history_index is not None:
@@ -1138,8 +1180,18 @@ def add_stock(stock_data: dict, current_user: dict = Depends(get_current_user)):
         row = cursor.fetchone()
         portfolio_list = json.loads(row[0]) if row else []
         
-        if code not in portfolio_list:
-            portfolio_list.append(code)
+        # 检查是否已存在（兼容新旧格式）
+        code_exists = False
+        for item in portfolio_list:
+            if isinstance(item, dict) and item.get('code') == code:
+                code_exists = True
+                break
+            elif isinstance(item, str) and item == code:
+                code_exists = True
+                break
+        
+        if not code_exists:
+            portfolio_list.append({'code': code, 'shares': 0})
             cursor.execute('''
                 INSERT OR REPLACE INTO user_data (user_id, data_type, data_key, json_value, updated_at)
                 VALUES (?, 'portfolio', '', ?, ?)
@@ -1149,8 +1201,18 @@ def add_stock(stock_data: dict, current_user: dict = Depends(get_current_user)):
         row = cursor.fetchone()
         watchlist = json.loads(row[0]) if row else []
         
-        if code not in watchlist:
-            watchlist.append(code)
+        # 检查是否已存在（兼容新旧格式）
+        code_exists = False
+        for item in watchlist:
+            if isinstance(item, dict) and item.get('code') == code:
+                code_exists = True
+                break
+            elif isinstance(item, str) and item == code:
+                code_exists = True
+                break
+        
+        if not code_exists:
+            watchlist.append({'code': code, 'tags': []})
             cursor.execute('''
                 INSERT OR REPLACE INTO user_data (user_id, data_type, data_key, json_value, updated_at)
                 VALUES (?, 'watchlist', '', ?, ?)
@@ -1798,14 +1860,30 @@ def logout(current_user: dict = Depends(get_current_user)):
     return {"message": "已退出登录"}
 
 # ========== 需要认证的用户数据接口 ==========
-def get_portfolio_with_prices(portfolio_codes, user_id=None):
-    """获取持仓列表并添加价格信息"""
+def get_portfolio_with_prices(portfolio_data, user_id=None):
+    """获取持仓列表并添加价格信息
+    portfolio_data: 新格式 [{code: 'xxx', shares: N}] 或旧格式 ['code1', 'code2']
+    """
     stock_codes = load_stock_codes()
     memos = load_memos(user_id)
     
+    # 提取代码列表（兼容旧格式、新格式、混合格式）
+    codes = []
+    shares_map = {}
+    for item in portfolio_data:
+        if isinstance(item, dict):
+            code = item.get('code')
+            if code:
+                codes.append(code)
+                shares_map[code] = item.get('shares', 0)
+        elif isinstance(item, str):
+            codes.append(item)
+    
+    portfolio_data = codes
+    
     # 构建股票列表
     stocks = []
-    for code in portfolio_codes:
+    for code in codes:
         stock_info = stock_codes.get(code, {})
         name = stock_info.get('name', code)
         stocks.append({'name': name, 'code': code})
@@ -1815,7 +1893,7 @@ def get_portfolio_with_prices(portfolio_codes, user_id=None):
     
     # 构建返回结果
     portfolio_list = []
-    for code in portfolio_codes:
+    for code in codes:
         stock_info = stock_codes.get(code, {})
         name = stock_info.get('name', code)
         memo_info = memos.get(code, {})
@@ -1825,6 +1903,7 @@ def get_portfolio_with_prices(portfolio_codes, user_id=None):
             'ticker': name,
             'code': code,
             'name': name,
+            'shares': shares_map.get(code, 0),
             'price': stock_data_item.get('price'),
             'change': stock_data_item.get('change'),
             'change_percent': stock_data_item.get('change_percent'),
@@ -1845,15 +1924,19 @@ def get_watchlist_with_prices(watchlist_data, user_id=None):
     stock_codes = load_stock_codes()
     memos = load_memos(user_id)
     
-    # 提取代码列表
-    if watchlist_data and isinstance(watchlist_data[0], dict) and 'code' in watchlist_data[0]:
-        # 新格式
-        codes = [item['code'] for item in watchlist_data]
-        tags_map = {item['code']: item.get('tags', []) for item in watchlist_data}
-    else:
-        # 旧格式
-        codes = watchlist_data if watchlist_data else []
-        tags_map = {}
+    # 提取代码列表（兼容旧格式、新格式、混合格式）
+    codes = []
+    tags_map = {}
+    for item in watchlist_data:
+        if isinstance(item, dict):
+            code = item.get('code')
+            if code:
+                codes.append(code)
+                tags_map[code] = item.get('tags', [])
+        elif isinstance(item, str):
+            codes.append(item)
+    
+    watchlist_data = codes
     
     # 构建股票列表
     stocks = []
