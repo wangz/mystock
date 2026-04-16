@@ -21,8 +21,15 @@ from auth import (
     get_user_by_email, create_user, update_last_login
 )
 from models import RegisterRequest, LoginRequest, TokenResponse, UserInfo, ChangePasswordRequest, TagsBody
+from logging_config import logger
+from middleware import UserContextMiddleware, RequestIDMiddleware, RequestLoggingMiddleware
 
 app = FastAPI(title="MyStock API", version="2.0.0")
+
+# 注册请求追踪中间件
+app.add_middleware(UserContextMiddleware)
+app.add_middleware(RequestIDMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
 
 # CORS配置
 app.add_middleware(
@@ -1764,57 +1771,91 @@ def get_stock_detail(code: str):
 @app.on_event("startup")
 async def startup_event():
     """启动时初始化数据库并迁移数据"""
-    # 初始化数据库和迁移数据
+    logger.info("=" * 50)
+    logger.info("MyStock 服务启动中...")
+    logger.info("=" * 50)
+    
     init_all()
-    # 初始化缓存
+    logger.info("数据库初始化完成")
+    
     init_cache_table()
+    logger.info("缓存表初始化完成")
+    
     clean_expired_cache()
+    logger.info("过期缓存清理完成")
+    
+    logger.info("✅ MyStock 服务启动成功！")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """关闭时清理资源"""
+    logger.info("MyStock 服务正在关闭...")
+    logger.info("再见！👋")
 
 
 # ========== 认证接口 ==========
 @app.post("/api/auth/register", response_model=TokenResponse)
 def register(req: RegisterRequest):
     """用户注册"""
+    logger.info(f"[注册] 收到注册请求: {req.email}")
+    
     if len(req.password) < 6:
+        logger.warning(f"[注册] 密码长度不足: {req.email}")
         raise HTTPException(status_code=400, detail="密码长度至少6位")
     
     if get_user_by_email(req.email):
+        logger.warning(f"[注册] 邮箱已被注册: {req.email}")
         raise HTTPException(status_code=400, detail="邮箱已被注册")
     
-    user = create_user(req.email, req.password, req.nickname or "")
-    token = create_token(user['user_id'], user['email'])
-    
-    return TokenResponse(
-        token=token,
-        user={
-            'user_id': user['user_id'],
-            'email': user['email'],
-            'nickname': user['nickname']
-        }
-    )
+    try:
+        user = create_user(req.email, req.password, req.nickname or "")
+        token = create_token(user['user_id'], user['email'])
+        logger.info(f"[注册] 用户注册成功: {user['user_id']}")
+        
+        return TokenResponse(
+            token=token,
+            user={
+                'user_id': user['user_id'],
+                'email': user['email'],
+                'nickname': user['nickname']
+            }
+        )
+    except Exception as e:
+        logger.error(f"[注册] 用户注册失败: {req.email}, 错误: {str(e)}", exc_info=True)
+        raise
 
 @app.post("/api/auth/login", response_model=TokenResponse)
 def login(req: LoginRequest):
     """用户登录"""
+    logger.info(f"[登录] 收到登录请求: {req.email}")
+    
     user = get_user_by_email(req.email)
     
     if not user:
+        logger.warning(f"[登录] 用户不存在: {req.email}")
         raise HTTPException(status_code=401, detail="邮箱或密码错误")
     
     if not verify_password(req.password, user['password_hash']):
+        logger.warning(f"[登录] 密码错误: {req.email}")
         raise HTTPException(status_code=401, detail="邮箱或密码错误")
     
-    update_last_login(user['user_id'])
-    token = create_token(user['user_id'], user['email'])
-    
-    return TokenResponse(
-        token=token,
-        user={
-            'user_id': user['user_id'],
-            'email': user['email'],
-            'nickname': user['nickname']
-        }
-    )
+    try:
+        update_last_login(user['user_id'])
+        token = create_token(user['user_id'], user['email'])
+        logger.info(f"[登录] 用户登录成功: {user['user_id']}")
+        
+        return TokenResponse(
+            token=token,
+            user={
+                'user_id': user['user_id'],
+                'email': user['email'],
+                'nickname': user['nickname']
+            }
+        )
+    except Exception as e:
+        logger.error(f"[登录] 用户登录失败: {req.email}, 错误: {str(e)}", exc_info=True)
+        raise
 
 @app.get("/api/auth/userinfo", response_model=UserInfo)
 def get_user_info(current_user: dict = Depends(get_current_user)):

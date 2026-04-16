@@ -6,6 +6,9 @@ import sqlite3
 import os
 import json
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_FILE = os.path.join(BASE_DIR, "portfolio_data.json")
@@ -66,14 +69,14 @@ def init_database():
     
     conn.commit()
     conn.close()
-    print("✅ 数据库表初始化完成")
+    logger.info("数据库表初始化完成")
 
 def migrate_old_data():
     """迁移旧数据到用户数据库"""
-    print("\n📦 开始数据迁移...")
+    logger.info("开始数据迁移...")
     
     if not os.path.exists(DATA_FILE) and not os.path.exists(MEMOS_FILE):
-        print("没有找到需要迁移的数据文件，跳过迁移")
+        logger.info("没有找到需要迁移的数据文件，跳过迁移")
         return
     
     conn = sqlite3.connect(USER_DB)
@@ -95,7 +98,7 @@ def migrate_old_data():
                     (user_id, data_type, data_key, json_value, updated_at)
                     VALUES ('default_user', 'portfolio', '', ?, ?)
                 ''', (portfolio, datetime.now()))
-                print(f"  📈 迁移持仓: {len(data['portfolio'])} 条")
+                logger.info(f"迁移持仓: {len(data['portfolio'])} 条")
                 migrated_count += 1
             
             # 观察列表
@@ -106,7 +109,7 @@ def migrate_old_data():
                     (user_id, data_type, data_key, json_value, updated_at)
                     VALUES ('default_user', 'watchlist', '', ?, ?)
                 ''', (watchlist, datetime.now()))
-                print(f"  👁️ 迁移观察列表: {len(data['watchlist'])} 条")
+                logger.info(f"迁移观察列表: {len(data['watchlist'])} 条")
                 migrated_count += 1
             
             # 感悟
@@ -117,7 +120,7 @@ def migrate_old_data():
                     (user_id, data_type, data_key, json_value, updated_at)
                     VALUES ('default_user', 'insights', '', ?, ?)
                 ''', (insights, datetime.now()))
-                print(f"  💡 迁移感悟: {len(data['insights'])} 条")
+                logger.info(f"迁移感悟: {len(data['insights'])} 条")
                 migrated_count += 1
             
             # 历史记录
@@ -128,17 +131,17 @@ def migrate_old_data():
                     (user_id, data_type, data_key, json_value, updated_at)
                     VALUES ('default_user', 'history', '', ?, ?)
                 ''', (history, datetime.now()))
-                print(f"  📜 迁移历史记录: {len(data['history'])} 条")
+                logger.info(f"迁移历史记录: {len(data['history'])} 条")
                 migrated_count += 1
             
             conn.commit()
             
             # 删除原文件
             os.remove(DATA_FILE)
-            print(f"  ✅ 已删除 portfolio_data.json")
+            logger.info(f"已删除 portfolio_data.json")
             
         except Exception as e:
-            print(f"  ❌ 迁移 portfolio_data.json 失败: {e}")
+            logger.error(f"迁移 portfolio_data.json 失败: {e}")
     
     # 迁移 memos.json
     if os.path.exists(MEMOS_FILE):
@@ -155,21 +158,21 @@ def migrate_old_data():
                 ''', (ticker, memo_json, datetime.now()))
             
             conn.commit()
-            print(f"  📝 迁移备忘录: {len(memos)} 条")
+            logger.info(f"迁移备忘录: {len(memos)} 条")
             
             # 删除原文件
             os.remove(MEMOS_FILE)
-            print(f"  ✅ 已删除 memos.json")
+            logger.info("已删除 memos.json")
             
         except Exception as e:
-            print(f"  ❌ 迁移 memos.json 失败: {e}")
+            logger.error(f"迁移 memos.json 失败: {e}")
     
     conn.close()
     
     if migrated_count > 0:
-        print(f"\n🎉 数据迁移完成！共迁移 {migrated_count} 类数据")
+        logger.info(f"数据迁移完成！共迁移 {migrated_count} 类数据")
     else:
-        print("\n⚠️ 没有数据需要迁移")
+        logger.info("没有数据需要迁移")
 
 def init_all():
     """初始化数据库并迁移数据"""
