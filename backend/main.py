@@ -54,6 +54,7 @@ DEFAULT_USER_ID = 'default_user'  # 默认用户ID，未登录时使用
 # 缓存配置
 CACHE_DURATION_VERY_SHORT = 60       # 1分钟缓存（秒）
 CACHE_DURATION_SHORT = 60 * 60       # 1小时缓存（秒）
+CACHE_DURATION_MEDIUM = 6 * 60 * 60 # 6小时缓存（秒）
 CACHE_DURATION_LONG = 1 * 24 * 60 * 60  # 1天缓存（秒）
 
 def init_cache_table():
@@ -1703,6 +1704,87 @@ def refresh_dividend_cache(code: str):
         return {'status': 'success', 'count': len(dividend_list)}
     except Exception as e:
         return {'status': 'error', 'message': str(e)}
+
+
+@app.get("/api/stock-kline/{code}")
+def get_stock_kline(code: str, period: str = "day", count: int = 30):
+    """
+    获取股票K线数据
+    - code: 股票代码，如 sh600519
+    - period: 周期 (day/week/month)
+    - count: 数据条数，默认30条
+    """
+    try:
+        # 标准化股票代码
+        if not code.startswith('sh') and not code.startswith('sz'):
+            code = code
+        
+        # 检查缓存
+        cache_key = f'kline_{code}_{period}_{count}'
+        cached_data, is_cached, _ = get_cache(cache_key)
+        if is_cached and cached_data:
+            return cached_data
+        
+        # 调用腾讯K线API
+        url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+        params = {
+            '_var': f'kline_{period}qfq',
+            'param': f'{code},{period},,,{count},qfq'
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        
+        # 解析响应
+        text = response.text
+        if '=' not in text:
+            return {'error': 'API响应格式错误'}
+        
+        data_str = text.split('=', 1)[1]
+        data = json.loads(data_str)
+        
+        if data.get('code') != 0:
+            return {'error': data.get('msg', '获取K线数据失败')}
+        
+        if code not in data.get('data', {}):
+            return {'error': f'股票代码 {code} 不存在'}
+        
+        stock_data = data['data'][code]
+        # 获取K线数据，优先使用前复权数据
+        kline_data = stock_data.get(f'qfq{period}') or stock_data.get(period, [])
+        
+        if not kline_data:
+            return {'error': '暂无K线数据'}
+        
+        # 转换为标准格式
+        result = {
+            'code': code,
+            'period': period,
+            'data': [
+                {
+                    'date': item[0],
+                    'open': float(item[1]),
+                    'close': float(item[2]),
+                    'high': float(item[3]),
+                    'low': float(item[4]),
+                    'volume': float(item[5])
+                }
+                for item in kline_data
+            ],
+            'count': len(kline_data)
+        }
+        
+        # 缓存结果
+        cache_duration = CACHE_DURATION_SHORT if period == 'day' else CACHE_DURATION_MEDIUM
+        set_cache(cache_key, 'kline', result, cache_duration)
+        
+        return result
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"[K线] 获取K线数据失败: {code}, 错误: {str(e)}")
+        return {'error': f'网络请求失败: {str(e)}'}
+    except Exception as e:
+        logger.error(f"[K线] 获取K线数据异常: {code}, 错误: {str(e)}")
+        return {'error': f'获取K线数据失败: {str(e)}'}
 
 
 @app.get("/api/stock-detail/{code}")

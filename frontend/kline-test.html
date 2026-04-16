@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K线图测试 - MyStock</title>
+    <script src="https://unpkg.com/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #00d4ff;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .stock-input {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        input {
+            padding: 10px 15px;
+            border: 1px solid #333;
+            border-radius: 5px;
+            background: #16213e;
+            color: #fff;
+            font-size: 14px;
+            width: 200px;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #00d4ff;
+        }
+        
+        .period-buttons {
+            display: flex;
+            gap: 5px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            border: 1px solid #00d4ff;
+            background: transparent;
+            color: #00d4ff;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: #00d4ff;
+            color: #1a1a2e;
+        }
+        
+        button.active {
+            background: #00d4ff;
+            color: #1a1a2e;
+        }
+        
+        button.fetch-btn {
+            background: #00d4ff;
+            color: #1a1a2e;
+            font-weight: bold;
+        }
+        
+        button.fetch-btn:hover {
+            background: #00b8d4;
+        }
+        
+        .chart-container {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        #kline-chart {
+            width: 100%;
+            height: 500px;
+        }
+        
+        .stock-info {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .info-card {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            flex: 1;
+            min-width: 150px;
+        }
+        
+        .info-card h3 {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 5px;
+        }
+        
+        .info-card .value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+        
+        .info-card .change {
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        .positive {
+            color: #f23645;
+        }
+        
+        .negative {
+            color: #089981;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 18px;
+            color: #00d4ff;
+        }
+        
+        .error {
+            text-align: center;
+            padding: 50px;
+            color: #f23645;
+        }
+        
+        .data-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #0f3460;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #888;
+        }
+        
+        .presets {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .preset-btn {
+            padding: 8px 15px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📈 K线图测试页面</h1>
+        
+        <div class="controls">
+            <div class="stock-input">
+                <input type="text" id="stockCode" placeholder="股票代码，如: sh600519" value="sh600519">
+                <button class="fetch-btn" onclick="loadKline()">获取K线</button>
+            </div>
+            
+            <div class="period-buttons">
+                <button class="active" onclick="setPeriod('day')">日K</button>
+                <button onclick="setPeriod('week')">周K</button>
+                <button onclick="setPeriod('month')">月K</button>
+            </div>
+            
+            <div class="presets">
+                <button class="preset-btn" onclick="loadPreset('sh600519', '贵州茅台')">贵州茅台</button>
+                <button class="preset-btn" onclick="loadPreset('sh000001', '上证指数')">上证指数</button>
+                <button class="preset-btn" onclick="loadPreset('sz000001', '平安银行')">平安银行</button>
+                <button class="preset-btn" onclick="loadPreset('sz300750', '宁德时代')">宁德时代</button>
+            </div>
+        </div>
+        
+        <div class="stock-info" id="stockInfo" style="display: none;">
+            <div class="info-card">
+                <h3>股票代码</h3>
+                <div class="value" id="infoCode">-</div>
+            </div>
+            <div class="info-card">
+                <h3>当前价</h3>
+                <div class="value" id="infoClose">-</div>
+            </div>
+            <div class="info-card">
+                <h3>涨跌额</h3>
+                <div class="change" id="infoChange">-</div>
+            </div>
+            <div class="info-card">
+                <h3>数据条数</h3>
+                <div class="value" id="infoCount">-</div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <div id="kline-chart"></div>
+        </div>
+        
+        <div class="data-info">
+            <strong>说明：</strong>此页面使用腾讯股票K线API获取数据，支持日K、周K、月K三种周期。数据为前复权数据。
+        </div>
+    </div>
+    
+    <script>
+        let chart = null;
+        let currentPeriod = 'day';
+        let currentData = null;
+        let isLoading = false;
+        
+        // 检查ECharts是否加载
+        if (typeof echarts === 'undefined') {
+            console.error('ECharts未加载！');
+            document.getElementById('kline-chart').innerHTML = 
+                '<div class="error">ECharts库加载失败，请检查网络连接</div>';
+        } else {
+            console.log('ECharts已加载');
+        }
+        
+        // 初始化图表
+        function initChart() {
+            const chartDom = document.getElementById('kline-chart');
+            if (!chart) {
+                chart = echarts.init(chartDom);
+            }
+            return chart;
+        }
+        
+        // 设置周期
+        function setPeriod(period) {
+            currentPeriod = period;
+            document.querySelectorAll('.period-buttons button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // 重新获取新周期的数据
+            loadKline();
+        }
+        
+        // 加载预设股票
+        function loadPreset(code, name) {
+            document.getElementById('stockCode').value = code;
+            loadKline();
+        }
+        
+        // 获取K线数据
+        async function loadKline() {
+            if (isLoading) {
+                console.log('正在加载中，请稍候...');
+                return;
+            }
+            
+            const code = document.getElementById('stockCode').value.trim();
+            if (!code) {
+                alert('请输入股票代码');
+                return;
+            }
+            
+            isLoading = true;
+            const chartDom = document.getElementById('kline-chart');
+            chartDom.innerHTML = '<div class="loading">正在加载K线数据...</div>';
+            
+            try {
+                // 调用后端API
+                const API_BASE = 'http://localhost:8000';
+                const response = await fetch(`${API_BASE}/api/stock-kline/${code}?period=${currentPeriod}&count=250`);
+                
+                if (!response.ok) {
+                    throw new Error('API请求失败');
+                }
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                currentData = data;
+                renderChart(data);
+                updateStockInfo(data);
+                
+            } catch (error) {
+                console.error('加载失败:', error);
+                chartDom.innerHTML = `<div class="error">加载失败: ${error.message}<br><br>提示：请确保后端服务已启动（bash start.sh）</div>`;
+            } finally {
+                isLoading = false;
+            }
+        }
+        
+        // 更新股票信息
+        function updateStockInfo(data) {
+            const infoDiv = document.getElementById('stockInfo');
+            infoDiv.style.display = 'flex';
+            
+            document.getElementById('infoCode').textContent = data.code;
+            document.getElementById('infoCount').textContent = data.count + ' 条';
+            
+            if (data.data && data.data.length > 0) {
+                const latest = data.data[data.data.length - 1];
+                const previous = data.data[data.data.length - 2];
+                
+                document.getElementById('infoClose').textContent = latest.close.toFixed(2);
+                
+                if (previous) {
+                    const change = latest.close - previous.close;
+                    const changePercent = (change / previous.close * 100).toFixed(2);
+                    const changeDiv = document.getElementById('infoChange');
+                    
+                    if (change >= 0) {
+                        changeDiv.innerHTML = `<span class="positive">▲ +${change.toFixed(2)} (+${changePercent}%)</span>`;
+                    } else {
+                        changeDiv.innerHTML = `<span class="negative">▼ ${change.toFixed(2)} (${changePercent}%)</span>`;
+                    }
+                }
+            }
+        }
+
+        // 渲染K线图
+        function renderChart(data) {
+            const chartDom = document.getElementById('kline-chart');
+            
+            if (!data.data || data.data.length === 0) {
+                chartDom.innerHTML = '<div class="error">暂无数据</div>';
+                chart = null;
+                return;
+            }
+            
+            // 安全地清理旧的图表实例
+            try {
+                if (chart) {
+                    try {
+                        if (typeof chart.isDisposed === 'function' && !chart.isDisposed()) {
+                            chart.dispose();
+                        }
+                    } catch (e) {
+                        console.warn('图表清理警告:', e);
+                    }
+                }
+            } catch (e) {
+                console.warn('清理旧图表时出错:', e);
+            }
+            chart = null;
+            
+            // 清空容器并初始化新图表
+            chartDom.innerHTML = '';
+            chart = echarts.init(chartDom);
+            console.log('图表初始化成功:', chart);
+            
+            // 准备数据
+            const dates = data.data.map(item => item.date);
+            const klineData = data.data.map(item => [item.open, item.close, item.low, item.high]);
+            console.log('K线数据准备完成，共', klineData.length, '条');
+            
+            const volumes = data.data.map(item => {
+                // 成交量柱状图颜色
+                const color = item.close >= item.open ? '#f23645' : '#089981';
+                return {
+                    value: item.volume,
+                    itemStyle: { color: color }
+                };
+            });
+            
+            // 计算MA
+            const ma5 = calculateMA(5, data.data);
+            const ma10 = calculateMA(10, data.data);
+            const ma20 = calculateMA(20, data.data);
+            
+            // ECharts配置
+            const option = {
+                title: {
+                    text: `${data.code} ${getPeriodName(currentPeriod)}K线`,
+                    left: 'center',
+                    textStyle: {
+                        color: '#00d4ff',
+                        fontSize: 18
+                    }
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'cross',
+                        crossStyle: {
+                            color: '#999'
+                        }
+                    },
+                    formatter: function (params) {
+                        const kline = params.find(p => p.seriesName === 'K线');
+                        const volume = params.find(p => p.seriesName === '成交量');
+                        
+                        if (!kline) return '';
+                        
+                        const [open, close, low, high] = kline.data;
+                        const vol = volume ? volume.data.value : 0;
+                        const color = close >= open ? '#f23645' : '#089981';
+                        
+                        return `
+                            <div style="font-family: monospace;">
+                                <div style="font-weight: bold; margin-bottom: 5px;">${kline.axisValue}</div>
+                                <div>开盘: <span style="color: ${color}">${open.toFixed(2)}</span></div>
+                                <div>收盘: <span style="color: ${color}">${close.toFixed(2)}</span></div>
+                                <div>最低: <span style="color: #089981">${low.toFixed(2)}</span></div>
+                                <div>最高: <span style="color: #f23645">${high.toFixed(2)}</span></div>
+                                <div>成交量: ${(vol / 10000).toFixed(0)}万</div>
+                            </div>
+                        `;
+                    }
+                },
+                legend: {
+                    data: ['K线', 'MA5', 'MA10', 'MA20', '成交量'],
+                    top: 30,
+                    textStyle: { color: '#888' }
+                },
+                grid: [
+                    {
+                        left: '10%',
+                        right: '8%',
+                        top: '80px',
+                        height: '55%'
+                    },
+                    {
+                        left: '10%',
+                        right: '8%',
+                        top: '78%',
+                        height: '12%'
+                    }
+                ],
+                xAxis: [
+                    {
+                        type: 'category',
+                        data: dates,
+                        gridIndex: 0,
+                        axisLabel: { show: false },
+                        axisLine: { lineStyle: { color: '#333' } }
+                    },
+                    {
+                        type: 'category',
+                        data: dates,
+                        gridIndex: 1,
+                        axisLabel: {
+                            color: '#666',
+                            fontSize: 10
+                        },
+                        axisLine: { lineStyle: { color: '#333' } }
+                    }
+                ],
+                yAxis: [
+                    {
+                        scale: true,
+                        gridIndex: 0,
+                        splitLine: { lineStyle: { color: '#222' } },
+                        axisLabel: {
+                            color: '#666',
+                            formatter: function(value) {
+                                return value.toFixed(0);
+                            }
+                        }
+                    },
+                    {
+                        scale: true,
+                        gridIndex: 1,
+                        splitNumber: 2,
+                        axisLabel: {
+                            color: '#666',
+                            formatter: function(value) {
+                                return (value / 10000).toFixed(0) + '万';
+                            }
+                        }
+                    }
+                ],
+                dataZoom: [
+                    {
+                        type: 'inside',
+                        xAxisIndex: [0, 1],
+                        start: 70,
+                        end: 100
+                    },
+                    {
+                        type: 'slider',
+                        xAxisIndex: [0, 1],
+                        start: 70,
+                        end: 100,
+                        height: 20,
+                        bottom: 10,
+                        borderColor: '#333',
+                        fillerColor: 'rgba(0, 212, 255, 0.2)',
+                        handleStyle: { color: '#00d4ff' },
+                        textStyle: { color: '#666' }
+                    }
+                ],
+                series: [
+                    {
+                        name: 'K线',
+                        type: 'candlestick',
+                        data: klineData,
+                        xAxisIndex: 0,
+                        yAxisIndex: 0,
+                        itemStyle: {
+                            color: '#f23645',      // 上涨颜色
+                            color0: '#089981',     // 下跌颜色
+                            borderColor: '#f23645',
+                            borderColor0: '#089981'
+                        }
+                    },
+                    {
+                        name: 'MA5',
+                        type: 'line',
+                        data: ma5,
+                        smooth: true,
+                        showSymbol: false,
+                        lineStyle: { width: 1, color: '#ff6b6b' },
+                        xAxisIndex: 0,
+                        yAxisIndex: 0
+                    },
+                    {
+                        name: 'MA10',
+                        type: 'line',
+                        data: ma10,
+                        smooth: true,
+                        showSymbol: false,
+                        lineStyle: { width: 1, color: '#ffd93d' },
+                        xAxisIndex: 0,
+                        yAxisIndex: 0
+                    },
+                    {
+                        name: 'MA20',
+                        type: 'line',
+                        data: ma20,
+                        smooth: true,
+                        showSymbol: false,
+                        lineStyle: { width: 1, color: '#6bcb77' },
+                        xAxisIndex: 0,
+                        yAxisIndex: 0
+                    },
+                    {
+                        name: '成交量',
+                        type: 'bar',
+                        data: volumes,
+                        xAxisIndex: 1,
+                        yAxisIndex: 1
+                    }
+                ]
+            };
+            
+            console.log('开始设置图表配置...');
+            chart.setOption(option);
+            console.log('图表配置设置成功！');
+            
+            // 响应式
+            window.addEventListener('resize', () => {
+                chart.resize();
+            });
+        }
+        
+        // 计算移动平均线
+        function calculateMA(dayCount, data) {
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                if (i < dayCount - 1) {
+                    result.push('-');
+                    continue;
+                }
+                
+                let sum = 0;
+                for (let j = 0; j < dayCount; j++) {
+                    sum += data[i - j].close;
+                }
+                result.push((sum / dayCount).toFixed(2));
+            }
+            return result;
+        }
+        
+        // 获取周期名称
+        function getPeriodName(period) {
+            const names = {
+                'day': '日',
+                'week': '周',
+                'month': '月'
+            };
+            return names[period] || period;
+        }
+        
+        // 页面加载时自动加载默认股票
+        window.onload = function() {
+            loadKline();
+        };
+    </script>
+</body>
+</html>
