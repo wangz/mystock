@@ -2216,20 +2216,30 @@
                 <div style="margin-bottom: 20px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                         <div style="font-weight: bold; color: #303133;">📉 K线走势</div>
-                        <div style="display: flex; gap: 5px;">
-                            <button 
+                        <div style="display: flex; gap: 5px; align-items: center;">
+                            <button
+                                @click="zoomKline(1.2)"
+                                style="padding: 4px 8px; font-size: 14px; border: 1px solid #909399; background: transparent; color: #909399; border-radius: 4px; cursor: pointer;">
+                                +
+                            </button>
+                            <button
+                                @click="zoomKline(0.8)"
+                                style="padding: 4px 8px; font-size: 14px; border: 1px solid #909399; background: transparent; color: #909399; border-radius: 4px; cursor: pointer;">
+                                -
+                            </button>
+                            <button
                                 :class="klinePeriod === 'day' ? 'active' : ''"
                                 @click="switchKlinePeriod('day')"
                                 style="padding: 4px 12px; font-size: 12px; border: 1px solid #409eff; background: transparent; color: #409eff; border-radius: 4px; cursor: pointer;">
                                 日K
                             </button>
-                            <button 
+                            <button
                                 :class="klinePeriod === 'week' ? 'active' : ''"
                                 @click="switchKlinePeriod('week')"
                                 style="padding: 4px 12px; font-size: 12px; border: 1px solid #67c23a; background: transparent; color: #67c23a; border-radius: 4px; cursor: pointer;">
                                 周K
                             </button>
-                            <button 
+                            <button
                                 :class="klinePeriod === 'month' ? 'active' : ''"
                                 @click="switchKlinePeriod('month')"
                                 style="padding: 4px 12px; font-size: 12px; border: 1px solid #e6a23c; background: transparent; color: #e6a23c; border-radius: 4px; cursor: pointer;">
@@ -3279,6 +3289,32 @@
                     loadKlineData();
                 };
 
+                const zoomKline = (factor) => {
+                    if (!klineChart) return;
+                    const option = klineChart.getOption();
+                    if (!option || !option.dataZoom || !option.dataZoom[0]) return;
+
+                    const dataZoom = option.dataZoom[0];
+                    const currentEnd = dataZoom.end;
+
+                    // 计算新的显示范围，保持最右边是最新数据
+                    const currentRange = 100 - currentEnd + dataZoom.start;
+                    let newRange = currentRange * factor;
+                    newRange = Math.max(10, Math.min(100, newRange));
+
+                    // 始终让 end 接近 100（最新数据）
+                    const newStart = Math.max(0, 100 - newRange);
+                    const newEnd = 100;
+
+                    klineChart.setOption({
+                        dataZoom: [{
+                            type: 'inside',
+                            start: newStart,
+                            end: newEnd
+                        }]
+                    });
+                };
+
                 const loadKlineData = async () => {
                     if (!stockDetail.value?.code) {
                         console.error('股票代码不存在:', stockDetail.value);
@@ -3386,8 +3422,15 @@
                             left: '10%',
                             right: '5%',
                             top: '60px',
-                            bottom: '10%'
+                            bottom: '15%'
                         },
+                        dataZoom: [
+                            {
+                                type: 'inside',
+                                start: 0,
+                                end: 100
+                            }
+                        ],
                         xAxis: {
                             type: 'category',
                             data: dates,
@@ -4089,6 +4132,7 @@
                     klineLoading,
                     hasKlineData,
                     switchKlinePeriod,
+                    zoomKline,
                     updateProgress,
                     alertStocks,
                     autoRefresh,
