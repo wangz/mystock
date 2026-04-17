@@ -1063,6 +1063,18 @@
             color: var(--text-tertiary);
         }
 
+        .kline-btn {
+            padding: 4px 12px;
+            font-size: 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .kline-btn.active {
+            color: white !important;
+        }
+
         /* ============================================================
            CSS 样式结束
            ============================================================ -->
@@ -2191,6 +2203,7 @@
         <!-- 股票详情弹窗 -->
         <el-dialog
             v-model="showStockDetailModal"
+            @opened="onDialogOpened"
             :title="stockDetail ? `${stockDetail.name} (${stockDetail.code})` : '股票详情'"
             width="700px"
             top="5vh"
@@ -2199,6 +2212,40 @@
                 正在加载股票详情...
             </div>
             <div v-else-if="stockDetail">
+                <!-- K线图展示 -->
+                <div style="margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <div style="font-weight: bold; color: #303133;">📉 K线走势</div>
+                        <div style="display: flex; gap: 5px;">
+                            <button 
+                                :class="klinePeriod === 'day' ? 'active' : ''"
+                                @click="switchKlinePeriod('day')"
+                                style="padding: 4px 12px; font-size: 12px; border: 1px solid #409eff; background: transparent; color: #409eff; border-radius: 4px; cursor: pointer;">
+                                日K
+                            </button>
+                            <button 
+                                :class="klinePeriod === 'week' ? 'active' : ''"
+                                @click="switchKlinePeriod('week')"
+                                style="padding: 4px 12px; font-size: 12px; border: 1px solid #67c23a; background: transparent; color: #67c23a; border-radius: 4px; cursor: pointer;">
+                                周K
+                            </button>
+                            <button 
+                                :class="klinePeriod === 'month' ? 'active' : ''"
+                                @click="switchKlinePeriod('month')"
+                                style="padding: 4px 12px; font-size: 12px; border: 1px solid #e6a23c; background: transparent; color: #e6a23c; border-radius: 4px; cursor: pointer;">
+                                月K
+                            </button>
+                        </div>
+                    </div>
+                    <div v-if="klineLoading" style="text-align: center; padding: 40px; color: #909399;">
+                        加载K线数据中...
+                    </div>
+                    <div v-else-if="!hasKlineData" style="text-align: center; padding: 40px; color: #909399;">
+                        暂无K线数据
+                    </div>
+                    <div id="kline-detail-chart" v-show="!klineLoading && hasKlineData" style="width: 100%; height: 400px;"></div>
+                </div>
+
                 <!-- ROE 核心指标 -->
                 <div style="margin-bottom: 20px;">
                     <div style="font-weight: bold; margin-bottom: 10px; color: #303133;">📊 ROE 核心指标</div>
@@ -2373,7 +2420,7 @@
     <script src="https://unpkg.com/echarts@5.4.3/dist/echarts.min.js"></script>
 
     <script>
-        const { createApp, ref, computed, onMounted, onUnmounted, nextTick } = Vue;
+        const { createApp, ref, computed, onMounted, onUnmounted, nextTick, watch } = Vue;
         const ElMessage = ElementPlus.ElMessage;
 
         const app = createApp({
@@ -2489,6 +2536,13 @@
                 const stockDetailLoading = ref(false);
                 const dividendLoading = ref(false);
                 let stockDetailChart = null;
+                
+                // K线图相关变量
+                let klineChart = null;
+                const klineData = ref(null);
+                const klinePeriod = ref('day');
+                const klineLoading = ref(false);
+                const hasKlineData = computed(() => klineData.value && klineData.value.data && klineData.value.data.length > 0);
 
                 // 获取所有备忘（计算属性）
                 const allMemos = computed(() => {
@@ -3064,6 +3118,14 @@
                     return userTags.value.filter(t => t.is_enabled);
                 });
 
+                // 对话框打开完成后的回调
+                const onDialogOpened = () => {
+                    console.log('对话框已打开');
+                    // 弹窗打开后加载K线数据，确保DOM已渲染
+                    klinePeriod.value = 'day';
+                    loadKlineData();
+                };
+
                 // 股票详情
                 const fetchStockDetail = async (code) => {
                     showStockDetailModal.value = true;
@@ -3085,12 +3147,24 @@
                             stockDetail.value.dividend_list = divData.dividend_list;
                             setTimeout(() => renderDividendChart(), 100);
                         }
+                        
+                        // K线数据加载移至 onDialogOpened 回调中
                     } catch (error) {
                         console.error('获取股票详情失败:', error);
                     } finally {
                         dividendLoading.value = false;
                     }
                 };
+
+                // 监听K线数据变化，自动渲染图表
+                watch(klineData, (newData) => {
+                    if (newData && newData.data && newData.data.length > 0) {
+                        console.log('K线数据变化，触发渲染');
+                        nextTick(() => {
+                            renderKlineChart();
+                        });
+                    }
+                });
 
                 const renderStockDetailChart = () => {
                     if (!stockDetail.value?.roe_history?.length) return;
@@ -3195,6 +3269,205 @@
                             }
                         ]
                     });
+                };
+
+                // K线图相关函数
+                const switchKlinePeriod = (period) => {
+                    if (klinePeriod.value === period) return;
+                    klinePeriod.value = period;
+                    loadKlineData();
+                };
+
+                const loadKlineData = async () => {
+                    if (!stockDetail.value?.code) {
+                        console.error('股票代码不存在:', stockDetail.value);
+                        return;
+                    }
+                    
+                    klineLoading.value = true;
+                    try {
+                        const code = stockDetail.value.code;
+                        console.log('正在加载K线数据:', code, '周期:', klinePeriod.value);
+                        
+                        const countMap = {
+                            'day': 500,
+                            'week': 200,
+                            'month': 120
+                        };
+                        const count = countMap[klinePeriod.value] || 500;
+                        
+                        const response = await fetch(`/api/stock-kline/${code}?period=${klinePeriod.value}&count=${count}`);
+                        console.log('API响应状态:', response.status);
+                        
+                        const data = await response.json();
+                        console.log('K线数据返回:', data);
+                        
+                        if (data.error) {
+                            console.error('加载K线数据失败:', data.error);
+                            klineData.value = null;
+                        } else if (data.data && data.data.length > 0) {
+                            console.log('成功加载K线数据:', data.data.length, '条');
+                            klineData.value = data;
+                            // 通过 watch 自动触发渲染，使用 nextTick 确保 DOM 已创建
+                        } else {
+                            console.warn('K线数据为空:', data);
+                            klineData.value = null;
+                        }
+                    } catch (error) {
+                        console.error('加载K线数据失败:', error);
+                        klineData.value = null;
+                    } finally {
+                        klineLoading.value = false;
+                    }
+                };
+
+                const renderKlineChart = () => {
+                    if (!klineData.value?.data?.length) {
+                        console.warn('K线数据为空，无法渲染图表');
+                        return;
+                    }
+                    
+                    console.log('开始渲染K线图表，数据条数:', klineData.value.data.length);
+                    
+                    const chartDom = document.getElementById('kline-detail-chart');
+                    if (!chartDom) {
+                        console.error('找不到图表容器元素: kline-detail-chart');
+                        return;
+                    }
+                    
+                    console.log('找到图表容器，开始初始化');
+                    
+                    if (klineChart) {
+                        try {
+                            if (typeof klineChart.isDisposed === 'function' && !klineChart.isDisposed()) {
+                                klineChart.dispose();
+                            }
+                        } catch (e) {
+                            console.warn('清理旧K线图表时出错:', e);
+                        }
+                    }
+                    klineChart = null;
+                    
+                    chartDom.innerHTML = '';
+                    klineChart = echarts.init(chartDom);
+                    console.log('K线图表初始化成功');
+                    
+                    const dates = klineData.value.data.map(item => item.date);
+                    const klineDataArray = klineData.value.data.map(item => [item.open, item.close, item.low, item.high]);
+                    
+                    const ma5 = calculateMA(5, klineData.value.data);
+                    const ma10 = calculateMA(10, klineData.value.data);
+                    const ma20 = calculateMA(20, klineData.value.data);
+                    
+                    const periodNames = { 'day': '日K', 'week': '周K', 'month': '月K' };
+                    const option = {
+                        title: {
+                            text: `${stockDetail.value.name} ${periodNames[klinePeriod.value] || '日K'}`,
+                            left: 'center',
+                            textStyle: {
+                                color: '#303133',
+                                fontSize: 14
+                            }
+                        },
+                        tooltip: {
+                            trigger: 'axis',
+                            axisPointer: {
+                                type: 'cross',
+                                crossStyle: { color: '#999' }
+                            }
+                        },
+                        legend: {
+                            data: ['K线', 'MA5', 'MA10', 'MA20'],
+                            top: 25,
+                            textStyle: { color: '#606266', fontSize: 10 }
+                        },
+                        grid: {
+                            left: '10%',
+                            right: '5%',
+                            top: '60px',
+                            bottom: '10%'
+                        },
+                        xAxis: {
+                            type: 'category',
+                            data: dates,
+                            axisLabel: {
+                                color: '#606266',
+                                fontSize: 10,
+                                rotate: 45
+                            },
+                            axisLine: { lineStyle: { color: '#dcdfe6' } }
+                        },
+                        yAxis: {
+                            scale: true,
+                            splitLine: { lineStyle: { color: '#f5f7fa' } },
+                            axisLabel: {
+                                color: '#606266',
+                                fontSize: 10
+                            }
+                        },
+                        series: [
+                            {
+                                name: 'K线',
+                                type: 'candlestick',
+                                data: klineDataArray,
+                                itemStyle: {
+                                    color: '#f56c6c',
+                                    color0: '#67c23a',
+                                    borderColor: '#f56c6c',
+                                    borderColor0: '#67c23a'
+                                }
+                            },
+                            {
+                                name: 'MA5',
+                                type: 'line',
+                                data: ma5,
+                                smooth: true,
+                                showSymbol: false,
+                                lineStyle: { width: 1, color: '#409eff' }
+                            },
+                            {
+                                name: 'MA10',
+                                type: 'line',
+                                data: ma10,
+                                smooth: true,
+                                showSymbol: false,
+                                lineStyle: { width: 1, color: '#e6a23c' }
+                            },
+                            {
+                                name: 'MA20',
+                                type: 'line',
+                                data: ma20,
+                                smooth: true,
+                                showSymbol: false,
+                                lineStyle: { width: 1, color: '#909399' }
+                            }
+                        ]
+                    };
+                    
+                    klineChart.setOption(option);
+                    console.log('K线图表渲染完成');
+                    
+                    window.addEventListener('resize', () => {
+                        if (klineChart) {
+                            klineChart.resize();
+                        }
+                    });
+                };
+
+                const calculateMA = (dayCount, data) => {
+                    const result = [];
+                    for (let i = 0; i < data.length; i++) {
+                        if (i < dayCount - 1) {
+                            result.push('-');
+                            continue;
+                        }
+                        let sum = 0;
+                        for (let j = 0; j < dayCount; j++) {
+                            sum += data[i - j].close;
+                        }
+                        result.push((sum / dayCount).toFixed(2));
+                    }
+                    return result;
                 };
 
                 // 感悟管理
@@ -3810,6 +4083,11 @@
                     stockDetailLoading,
                     dividendLoading,
                     fetchStockDetail,
+                    onDialogOpened,
+                    klinePeriod,
+                    klineLoading,
+                    hasKlineData,
+                    switchKlinePeriod,
                     updateProgress,
                     alertStocks,
                     autoRefresh,
@@ -3909,7 +4187,8 @@
                     deleteTag,
                     toggleTagEnabled,
                     updateStockTags,
-                    fetchUserTags
+                    fetchUserTags,
+                    klineData
                 };
             }
         });
