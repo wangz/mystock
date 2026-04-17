@@ -3121,9 +3121,6 @@
                 // 对话框打开完成后的回调
                 const onDialogOpened = () => {
                     console.log('对话框已打开');
-                    // 弹窗打开后加载K线数据，确保DOM已渲染
-                    klinePeriod.value = 'day';
-                    loadKlineData();
                 };
 
                 // 股票详情
@@ -3132,14 +3129,14 @@
                     stockDetailLoading.value = true;
                     stockDetail.value = { dividend_list: [] };
                     dividendLoading.value = false;
-                    
+
                     try {
                         const response = await fetch(`${API_BASE}/api/stock-detail/${code}`);
                         const data = await response.json();
                         stockDetail.value = data;
                         stockDetailLoading.value = false;
                         setTimeout(() => renderStockDetailChart(), 100);
-                        
+
                         dividendLoading.value = true;
                         const divResponse = await fetch(`${API_BASE}/api/stock-dividend/${code}`);
                         const divData = await divResponse.json();
@@ -3147,8 +3144,12 @@
                             stockDetail.value.dividend_list = divData.dividend_list;
                             setTimeout(() => renderDividendChart(), 100);
                         }
-                        
-                        // K线数据加载移至 onDialogOpened 回调中
+
+                        // K线数据加载，在详情数据加载完成后
+                        klinePeriod.value = 'day';
+                        nextTick(() => {
+                            loadKlineData();
+                        });
                     } catch (error) {
                         console.error('获取股票详情失败:', error);
                     } finally {
