@@ -3807,6 +3807,12 @@
                     const target = addStockTarget.value;
                     const list = target === 'portfolio' ? portfolio : watchlist;
 
+                    // 检查是否已存在
+                    if (list.value.some(s => s.code === stock.code)) {
+                        ElMessage.warning('该股票已在' + (target === 'portfolio' ? '持仓' : '关注') + '列表中');
+                        return;
+                    }
+
                     try {
                         await authFetch(`${API_BASE}/api/add-stock`, {
                             method: 'POST',
