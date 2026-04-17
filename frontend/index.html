@@ -1420,6 +1420,9 @@
                             </div>
                         </el-tab-pane>
                         <el-tab-pane label="💡 我又悟了" name="insight">
+                            <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+                                <el-button size="small" @click="showInsightDetail = true">详情</el-button>
+                            </div>
                             <div class="insight-container">
                                 <div class="insight-input-area">
                                     <el-input
@@ -1462,6 +1465,9 @@
                         </el-tab-pane>
 
                         <el-tab-pane label="📝 我的备忘" name="memo">
+                            <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+                                <el-button size="small" @click="showMemoDetail = true">详情</el-button>
+                            </div>
                             <div class="memo-list" v-if="allMemos.length > 0">
                                 <div v-for="(item, index) in allMemos" :key="index" class="memo-item">
                                     <div class="memo-header">
@@ -1676,6 +1682,60 @@
             <div style="margin-top: 15px; display: flex; justify-content: flex-end; gap: 10px;">
                 <el-button @click="showMemoModal = false">取消</el-button>
                 <el-button type="primary" @click="saveMemo">保存</el-button>
+            </div>
+        </el-dialog>
+
+        <!-- 备忘录详情弹窗 -->
+        <el-dialog
+            v-model="showMemoDetail"
+            title="📝 备忘录详情"
+            width="800px"
+            top="5vh"
+        >
+            <div v-if="allMemos.length > 0" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px;">
+                <div v-for="(item, index) in allMemos" :key="index"
+                     style="background: #f5f7fa; border-radius: 8px; padding: 16px; position: relative;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="font-weight: bold;">{{ item.name }}</span>
+                        <el-button type="danger" link size="small" @click="deleteMemo(item.code, item.from)">×</el-button>
+                    </div>
+                    <div style="font-size: 12px; color: #409eff; margin-bottom: 8px;">
+                        {{ item.from === 'portfolio' ? '📈 持仓' : '👁️ 观察' }}
+                    </div>
+                    <div style="color: #303133; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+                        {{ item.memo }}
+                    </div>
+                    <div style="font-size: 12px; color: #909399;">
+                        更新于: {{ formatTime(item.updated_at) }}
+                    </div>
+                </div>
+            </div>
+            <div v-else style="text-align: center; padding: 40px; color: #909399;">
+                暂无备忘记录
+            </div>
+        </el-dialog>
+
+        <!-- 感悟详情弹窗 -->
+        <el-dialog
+            v-model="showInsightDetail"
+            title="💡 感悟详情"
+            width="800px"
+            top="5vh"
+        >
+            <div v-if="insights.length > 0" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px;">
+                <div v-for="(insight, index) in insights" :key="index"
+                     style="background: #f5f7fa; border-radius: 8px; padding: 16px; position: relative;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                        <span style="font-size: 14px; color: #303133; flex: 1;">{{ insight.content }}</span>
+                        <el-button type="danger" link size="small" @click="deleteInsight(index)" style="margin-left: 8px;">×</el-button>
+                    </div>
+                    <div style="font-size: 12px; color: #909399;">
+                        {{ insight.time }}
+                    </div>
+                </div>
+            </div>
+            <div v-else style="text-align: center; padding: 40px; color: #909399;">
+                暂无感悟记录
             </div>
         </el-dialog>
 
@@ -2526,6 +2586,8 @@
                 const loadingHistory = ref(false);
                 const showHistoryModal = ref(false);
                 const showMemoModal = ref(false);
+                const showMemoDetail = ref(false);
+                const showInsightDetail = ref(false);
                 const currentMemoStock = ref(null);
                 const currentMemoStockIndex = ref(null);
                 const currentMemoStockList = ref(null);
@@ -3676,6 +3738,34 @@
                     }
                 };
 
+                // 删除备忘
+                const deleteMemo = async (code, from) => {
+                    if (!confirm('确定要删除这条备忘录吗？')) return;
+
+                    const list = from === 'portfolio' ? portfolio : watchlist;
+                    const stock = list.value.find(s => s.code === code);
+                    if (stock) {
+                        stock.memo = '';
+                        stock.updated_at = null;
+                    }
+
+                    // 调用API删除
+                    try {
+                        await authFetch(`${API_BASE}/api/stock-memo`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                code: code,
+                                name: '',
+                                memo: ''
+                            })
+                        });
+                        ElMessage.success('备忘录已删除');
+                    } catch (error) {
+                        console.error('删除备忘失败:', error);
+                    }
+                };
+
                 // 打开添加股票弹窗
                 const openAddStockModal = (target) => {
                     if (!auth.value.isLoggedIn) {
@@ -4196,6 +4286,8 @@
                     loadingHistory,
                     showHistoryModal,
                     showMemoModal,
+                    showMemoDetail,
+                    showInsightDetail,
                     currentMemoText,
                     allMemos,
                     showAddStockModal,
@@ -4220,6 +4312,7 @@
                     restoreStock,
                     removeHistory,
                     openMemo,
+                    deleteMemo,
                     saveMemo,
                     startAutoRefresh,
                     fetchLimitUpAnalysis,
