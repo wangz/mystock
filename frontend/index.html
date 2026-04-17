@@ -2553,6 +2553,7 @@
                 const klinePeriod = ref('day');
                 const klineLoading = ref(false);
                 const hasKlineData = computed(() => klineData.value && klineData.value.data && klineData.value.data.length > 0);
+                let klineDefaultZoom = 20; // 默认显示20%
 
                 // 获取所有备忘（计算属性）
                 const allMemos = computed(() => {
@@ -3295,22 +3296,21 @@
                     if (!option || !option.dataZoom || !option.dataZoom[0]) return;
 
                     const dataZoom = option.dataZoom[0];
-                    const currentEnd = dataZoom.end;
+                    // 当前显示范围（因为 end 固定为 100）
+                    const currentRange = 100 - dataZoom.start;
 
-                    // 计算新的显示范围，保持最右边是最新数据
-                    const currentRange = 100 - currentEnd + dataZoom.start;
-                    let newRange = currentRange * factor;
+                    // 调整范围：factor > 1 放大（范围变小，显示更少），factor < 1 缩小（范围变大，显示更多）
+                    let newRange = currentRange / factor;
                     newRange = Math.max(10, Math.min(100, newRange));
 
-                    // 始终让 end 接近 100（最新数据）
+                    // 始终让 end = 100（最新数据）
                     const newStart = Math.max(0, 100 - newRange);
-                    const newEnd = 100;
 
                     klineChart.setOption({
                         dataZoom: [{
                             type: 'inside',
                             start: newStart,
-                            end: newEnd
+                            end: 100
                         }]
                     });
                 };
@@ -3331,7 +3331,13 @@
                             'week': 200,
                             'month': 120
                         };
+                        const defaultZoomMap = {
+                            'day': 20,    // 日K默认显示20%
+                            'week': 70,   // 周K默认显示70%
+                            'month': 80   // 月K默认显示80%
+                        };
                         const count = countMap[klinePeriod.value] || 500;
+                        klineDefaultZoom = defaultZoomMap[klinePeriod.value] || 60;
                         
                         const response = await fetch(`/api/stock-kline/${code}?period=${klinePeriod.value}&count=${count}`);
                         console.log('API响应状态:', response.status);
@@ -3427,7 +3433,7 @@
                         dataZoom: [
                             {
                                 type: 'inside',
-                                start: 0,
+                                start: 100 - klineDefaultZoom,
                                 end: 100
                             }
                         ],
