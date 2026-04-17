@@ -30,6 +30,16 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Database
+*.db
+user_data.db
+cache.db
+finance_data.db
+
+# Logs
+backend/logs/
+*.log
+
 # Test
 .pytest_cache/
 .coverage

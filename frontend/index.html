@@ -1802,7 +1802,7 @@
                     <el-table :data="limitUpAnalysis.first_limit_candidates?.slice(0, 20)" stripe style="width: 100%" size="small">
                         <el-table-column prop="name" label="股票" width="100">
                             <template #default="{ row }">
-                                <span class="stock-name-link" @click="addStockSearch = row.name; showAddStockModal = true; addStockTarget = 'watchlist'">
+<span class="stock-name-link" @click="prepareAddStock(row.name)">
                                     {{ row.name }}
                                 </span>
                             </template>
@@ -1893,7 +1893,7 @@
                     </el-table-column>
                     <el-table-column prop="股票简称" label="股票" min-width="100">
                         <template #default="{ row }">
-                            <span class="stock-name-link" @click="addStockSearch = row['股票简称']; showAddStockModal = true; addStockTarget = 'watchlist'">
+                            <span class="stock-name-link" @click="prepareAddStock(row['股票简称'])">
                                 {{ row['股票简称'] }}
                             </span>
                         </template>
@@ -1946,7 +1946,7 @@
                     </el-table-column>
                     <el-table-column prop="股票简称" label="股票" min-width="100">
                         <template #default="{ row }">
-                            <span class="stock-name-link" @click="addStockSearch = row['股票简称']; showAddStockModal = true; addStockTarget = 'watchlist'">
+                            <span class="stock-name-link" @click="prepareAddStock(row['股票简称'])">
                                 {{ row['股票简称'] }}
                             </span>
                         </template>
@@ -2004,7 +2004,7 @@
                     </el-table-column>
                     <el-table-column prop="股票简称" label="股票" min-width="100">
                         <template #default="{ row }">
-                            <span class="stock-name-link" @click="addStockSearch = row['股票简称']; showAddStockModal = true; addStockTarget = 'watchlist'">
+                            <span class="stock-name-link" @click="prepareAddStock(row['股票简称'])">
                                 {{ row['股票简称'] }}
                             </span>
                         </template>
@@ -2080,7 +2080,7 @@
                     </el-table-column>
                     <el-table-column prop="股票简称" label="股票" min-width="120">
                         <template #default="{ row }">
-                            <span class="stock-name-link" @click="addStockSearch = row['股票简称']; showAddStockModal = true; addStockTarget = 'watchlist'">
+                            <span class="stock-name-link" @click="prepareAddStock(row['股票简称'])">
                                 {{ row['股票简称'] }}
                             </span>
                         </template>
@@ -2161,7 +2161,7 @@
                     </el-table-column>
                     <el-table-column prop="name" label="股票" min-width="120">
                         <template #default="{ row }">
-                            <span class="stock-name-link" @click="addStockSearch = row.name; showAddStockModal = true; addStockTarget = 'watchlist'">
+                            <span class="stock-name-link" @click="prepareAddStock(row.name)">
                                 {{ row.name }}
                             </span>
                         </template>
@@ -3944,10 +3944,20 @@
                                 })
                             })
                         });
+
+                        ElMessage.success('已添加到' + (target === 'portfolio' ? '持仓' : '关注') + '列表');
                     } catch (error) {
                         console.error('添加股票失败:', error);
                         alert('添加失败，请重试');
                     }
+                };
+
+                // 快速准备添加股票（设置搜索词和目标，并打开弹窗）
+                const prepareAddStock = (name) => {
+                    addStockSearch.value = name;
+                    addStockTarget.value = 'watchlist';
+                    showAddStockModal.value = true;
+                    searchStock();
                 };
 
                 const deleteInsight = async (index) => {
@@ -4291,6 +4301,7 @@
                     currentMemoText,
                     allMemos,
                     showAddStockModal,
+                    addStockTarget,
                     addStockSearch,
                     addStockResults,
                     addStockLoading,
@@ -4299,6 +4310,9 @@
                     debouncedSearchStock,
                     selectStock,
                     confirmAddStock,
+                    prepareAddStock,
+                    searchStock,
+                    loadStockCache,
                     moveUp,
                     moveDown,
                     moveTop,
