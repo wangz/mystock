@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股票详情</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; min-height: 100vh; }
+        .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+        .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+        .stock-title { font-size: 24px; font-weight: 600; color: #303133; }
+        .stock-code { color: #909399; font-size: 14px; margin-left: 10px; }
+        .loading { text-align: center; padding: 60px; color: #909399; }
+        .back-link { color: #409eff; text-decoration: none; display: inline-block; margin-bottom: 15px; }
+        .back-link:hover { text-decoration: underline; }
+        .kline-tabs { display: flex; gap: 5px; margin-bottom: 10px; }
+        .kline-tabs button { padding: 4px 12px; border: 1px solid #dcdfe6; background: white; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .kline-tabs button.active { background: #409eff; color: white; border-color: #409eff; }
+        .zoom-btns { display: flex; gap: 3px; margin-right: 10px; }
+        .zoom-btns button { padding: 4px 8px; border: 1px solid #909399; background: transparent; border-radius: 4px; cursor: pointer; }
+        .section-title { font-weight: bold; color: #303133; margin-bottom: 10px; }
+        .roe-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+        .roe-item { background: #f5f7fa; padding: 12px; border-radius: 4px; text-align: center; }
+        .roe-label { color: #909399; font-size: 12px; }
+        .roe-value { font-size: 20px; font-weight: bold; margin-top: 4px; }
+        .roe-green { color: #67c23a; }
+        .roe-blue { color: #409eff; }
+        .roe-orange { color: #e6a23c; }
+        .roe-red { color: #f56c6c; }
+        .dividend-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .dividend-table th, .dividend-table td { padding: 8px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+        .dividend-table th { color: #909399; font-weight: normal; }
+        .dividend-table td { color: #303133; }
+        .dividend-table tr:hover { background: #fafafa; }
+        .info-text { color: #606266; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← 返回主页</a>
+        
+        <div id="loading" class="loading">加载中...</div>
+        <div id="error" class="loading" style="display:none; color: #f56c6c;"></div>
+        
+        <div id="content" style="display:none;">
+            <div class="card">
+                <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                    <span id="stockName" class="stock-title">--</span>
+                    <span id="stockCode" class="stock-code">--</span>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <div class="section-title">📉 K线走势</div>
+                        <div style="display: flex; align-items: center;">
+                            <div class="zoom-btns">
+                                <button onclick="zoomKline(1.2)">+</button>
+                                <button onclick="zoomKline(0.8)">-</button>
+                            </div>
+                            <div class="kline-tabs">
+                                <button class="active" data-period="day" onclick="switchPeriod('day')">日K</button>
+                                <button data-period="week" onclick="switchPeriod('week')">周K</button>
+                                <button data-period="month" onclick="switchPeriod('month')">月K</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="klineChart" style="width: 100%; height: 400px;"></div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <div class="section-title">📊 ROE 核心指标</div>
+                    <div class="roe-grid">
+                        <div class="roe-item">
+                            <div class="roe-label">10年平均</div>
+                            <div id="avgRoe10y" class="roe-value roe-green">-</div>
+                        </div>
+                        <div class="roe-item">
+                            <div class="roe-label">5年平均</div>
+                            <div id="avgRoe5y" class="roe-value roe-blue">-</div>
+                        </div>
+                        <div class="roe-item">
+                            <div class="roe-label">最新ROE</div>
+                            <div id="roeLatest" class="roe-value roe-orange">-</div>
+                        </div>
+                        <div class="roe-item">
+                            <div class="roe-label">最低年份</div>
+                            <div id="minRoeYear" class="roe-value roe-red">-</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <div class="section-title">📈 ROE 历史趋势</div>
+                    <div id="roeChart" style="width: 100%; height: 250px;"></div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <div class="section-title">💰 历年分红</div>
+                    <div id="dividend-chart" style="width: 100%; height: 250px; margin-bottom: 15px;"></div>
+                    <table class="dividend-table">
+                        <thead>
+                            <tr>
+                                <th>公告日期</th>
+                                <th>每股派息</th>
+                                <th>除权除息日</th>
+                                <th>派息率</th>
+                                <th>进度</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dividendBody"></tbody>
+                    </table>
+                    <div id="noDividend" style="text-align: center; padding: 20px; color: #909399; display: none;">暂无分红数据</div>
+                </div>
+                
+                <div>
+                    <div class="section-title">📋 基本信息</div>
+                    <div id="basicInfo" class="info-text">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        var API_BASE = '';
+        var currentCode = '';
+        var stockDetail = null;
+        var klineChart = null;
+        var roeChart = null;
+        var dividendChart = null;
+        var klineDefaultZoom = 20;
+        var currentPeriod = 'day';
+        
+        function fetchData() {
+            var params = new URLSearchParams(window.location.search);
+            currentCode = params.get('code') || '';
+            
+            if (!currentCode) {
+                showError('请提供股票代码参数，如: stock-detail.html?code=sh600519');
+                return;
+            }
+            
+            document.getElementById('loading').style.display = 'block';
+            
+            fetch(API_BASE + '/api/stock-detail/' + currentCode)
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    stockDetail = data;
+                    document.getElementById('stockName').textContent = stockDetail.name || currentCode;
+                    document.getElementById('stockCode').textContent = currentCode;
+                    document.title = (stockDetail.name || currentCode) + ' - 股票详情';
+                    
+                    document.getElementById('avgRoe10y').textContent = (stockDetail.avg_roe_10y || '-') + '%';
+                    document.getElementById('avgRoe5y').textContent = (stockDetail.avg_roe_5y || '-') + '%';
+                    document.getElementById('roeLatest').textContent = (stockDetail.roe_latest || '-') + '%';
+                    document.getElementById('minRoeYear').textContent = (stockDetail.min_roe_year || '-') + ' (' + (stockDetail.min_roe || '-') + '%)';
+                    
+                    var info = [];
+                    if (stockDetail.aliases) info.push('行业：' + stockDetail.aliases);
+                    if (stockDetail.years_count) info.push('有效ROE年份：' + stockDetail.years_count + ' 年');
+                    document.getElementById('basicInfo').textContent = info.join(' | ') || '-';
+                    
+                    if (stockDetail.roe_history && stockDetail.roe_history.length > 0) {
+                        drawRoeChart();
+                    }
+                    
+                    fetchKline('day');
+                    fetchDividend();
+                    
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('content').style.display = 'block';
+                    
+                    setTimeout(function() {
+                        if (stockDetail.roe_history && stockDetail.roe_history.length > 0) {
+                            drawRoeChart();
+                        }
+                    }, 100);
+                })
+                .catch(function(e) {
+                    showError('加载失败: ' + e.message);
+                });
+        }
+        
+        function fetchKline(period) {
+            currentPeriod = period;
+            var btns = document.querySelectorAll('.kline-tabs button');
+            for (var i = 0; i < btns.length; i++) {
+                btns[i].classList.remove('active');
+                if (btns[i].getAttribute('data-period') === period) {
+                    btns[i].classList.add('active');
+                }
+            }
+            
+            fetch(API_BASE + '/api/stock-kline/' + currentCode + '?period=' + period + '&count=500')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.data && data.data.length > 0) {
+                        setTimeout(function() {
+                            drawKlineChart(data.data);
+                        }, 100);
+                    }
+                })
+                .catch(function(e) {
+                    console.error('获取K线失败:', e);
+                });
+        }
+        
+        function switchPeriod(period) {
+            fetchKline(period);
+        }
+        
+        function fetchDividend() {
+            fetch(API_BASE + '/api/stock-dividend/' + currentCode)
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.dividend_list && data.dividend_list.length > 0) {
+                        stockDetail.dividend_list = data.dividend_list;
+                        setTimeout(function() {
+                            drawDividendChart();
+                            renderDividendTable();
+                        }, 100);
+                    }
+                })
+                .catch(function(e) {
+                    console.error('获取分红失败:', e);
+                });
+        }
+        
+        function drawDividendChart() {
+            var chartDom = document.getElementById('dividend-chart');
+            if (!chartDom) return;
+            
+            if (window.dividendChartInstance) {
+                window.dividendChartInstance.dispose();
+            }
+            
+            var data = stockDetail.dividend_list || [];
+            
+            var yearly = {};
+            data.forEach(function(item) {
+                var year = (item.ex_div_date || item.announce_date || '').substring(0, 4);
+                if (!year || year.length !== 4) return;
+                if (!yearly[year]) {
+                    yearly[year] = { total: 0, yields: [] };
+                }
+                yearly[year].total += item.cash_div || 0;
+                if (item.dividend_yield) {
+                    yearly[year].yields.push(item.dividend_yield);
+                }
+            });
+            
+            var years = Object.keys(yearly).sort().slice(0, 10);
+            var cashData = years.map(function(y) { return yearly[y].total.toFixed(2); });
+            var yieldData = years.map(function(y) {
+                if (yearly[y].yields.length === 0) return null;
+                var sum = yearly[y].yields.reduce(function(a, b) { return a + b; }, 0);
+                return parseFloat(sum.toFixed(2));
+            });
+            
+            window.dividendChartInstance = echarts.init(chartDom);
+            window.dividendChartInstance.setOption({
+                tooltip: { trigger: 'axis' },
+                legend: { data: ['每股分红', '派息率'], top: 0 },
+                grid: { left: '3%', right: '4%', bottom: '3%', top: '15%', containLabel: true },
+                xAxis: { type: 'category', data: years },
+                yAxis: [
+                    { type: 'value', name: '元' },
+                    { type: 'value', name: '%' }
+                ],
+                series: [
+                    {
+                        name: '每股分红',
+                        type: 'bar',
+                        data: cashData,
+                        itemStyle: { color: '#409eff' },
+                        label: { show: true, position: 'inside', formatter: '{c}', color: '#fff', fontWeight: 'bold' }
+                    },
+                    {
+                        name: '派息率',
+                        type: 'line',
+                        yAxisIndex: 1,
+                        data: yieldData,
+                        itemStyle: { color: '#67c23a' },
+                        label: { show: true, position: 'top', formatter: '{c}%', color: '#67c23a', fontSize: 12, fontWeight: 'bold' }
+                    }
+                ]
+            });
+        }
+        
+        function renderDividendTable() {
+            var divList = stockDetail.dividend_list || [];
+            if (divList.length === 0) {
+                document.getElementById('noDividend').style.display = 'block';
+                return;
+            }
+            
+            var html = '';
+            for (var i = 0; i < Math.min(divList.length, 20); i++) {
+                var d = divList[i];
+                var yieldColor = d.dividend_yield && d.dividend_yield > 3 ? '#67c23a' : '#909399';
+                html += '<tr>' +
+                    '<td>' + (d.announce_date || '-') + '</td>' +
+                    '<td>' + (d.cash_div || d.dividend || '-') + '元</td>' +
+                    '<td>' + (d.ex_div_date || '-') + '</td>' +
+                    '<td style="color:' + yieldColor + '">' + (d.dividend_yield ? d.dividend_yield + '%' : '-') + '</td>' +
+                    '<td>' + (d.progress || '-') + '</td>' +
+                    '</tr>';
+            }
+            document.getElementById('dividendBody').innerHTML = html;
+        }
+        
+        function zoomKline(factor) {
+            klineDefaultZoom = Math.max(5, Math.min(100, klineDefaultZoom * factor));
+            if (klineChart) {
+                klineChart.setOption({
+                    dataZoom: [{ type: 'inside', start: 100 - klineDefaultZoom, end: 100 }]
+                });
+            }
+        }
+        
+        function drawKlineChart(klineData) {
+            var chartDom = document.getElementById('klineChart');
+            if (!klineChart) {
+                klineChart = echarts.init(chartDom);
+            } else {
+                klineChart.resize();
+            }
+            
+            var dates = klineData.map(function(d) { return d.date; });
+            var kData = klineData.map(function(d) { return [d.open, d.close, d.low, d.high]; });
+            
+            klineChart.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                axisPointer: { link: [{ xAxisIndex: 'all' }] },
+                grid: [{ left: 60, right: 60, top: 20, height: '65%' }, { left: 60, right: 60, top: '78%', height: '15%' }],
+                xAxis: [
+                    { type: 'category', data: dates, gridIndex: 0, boundaryGap: false },
+                    { type: 'category', data: dates, gridIndex: 1, boundaryGap: false }
+                ],
+                yAxis: [
+                    { scale: true, gridIndex: 0, splitArea: { show: true } },
+                    { scale: true, gridIndex: 1 }
+                ],
+                dataZoom: [{ type: 'inside', start: 100 - klineDefaultZoom, end: 100 }],
+                series: [
+                    {
+                        type: 'candlestick',
+                        data: kData,
+                        xAxisIndex: 0, yAxisIndex: 0,
+                        itemStyle: { color: '#f56c6c', color0: '#67c23a', borderColor: '#f56c6c', borderColor0: '#67c23a' }
+                    },
+                    {
+                        type: 'bar',
+                        data: klineData.map(function(d) { return d.volume; }),
+                        xAxisIndex: 1, yAxisIndex: 1,
+                        itemStyle: { color: '#7f7f7f' }
+                    }
+                ]
+            });
+        }
+        
+        function drawRoeChart() {
+            var chartDom = document.getElementById('roeChart');
+            if (!roeChart) {
+                roeChart = echarts.init(chartDom);
+            } else {
+                roeChart.resize();
+            }
+            
+            var roeData = stockDetail.roe_history || [];
+            var years = roeData.map(function(d) { return d.year; }).reverse();
+            var roes = roeData.map(function(d) { return d.roe; }).reverse();
+            
+            roeChart.setOption({
+                tooltip: { trigger: 'axis' },
+                grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+                xAxis: { type: 'category', data: years },
+                yAxis: { type: 'value', axisLabel: { formatter: '{value}%' } },
+                series: [{
+                    type: 'bar',
+                    data: roes,
+                    itemStyle: {
+                        color: function(params) {
+                            if (params.value >= 15) return '#67c23a';
+                            if (params.value >= 10) return '#409eff';
+                            return '#f56c6c';
+                        }
+                    },
+                    label: { show: true, position: 'top', formatter: '{c}%' }
+                }]
+            });
+        }
+        
+        function showError(msg) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').textContent = msg;
+        }
+        
+        window.onload = fetchData;
+        window.onresize = function() {
+            if (klineChart) klineChart.resize();
+            if (roeChart) roeChart.resize();
+            if (window.dividendChartInstance) window.dividendChartInstance.resize();
+        };
+    </script>
+</body>
+</html>

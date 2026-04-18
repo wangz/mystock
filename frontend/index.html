@@ -2268,6 +2268,14 @@
             width="700px"
             top="5vh"
         >
+            <template #header v-if="stockDetail">
+                <span>{{ stockDetail.name }} ({{ stockDetail.code }})</span>
+            </template>
+            <div v-if="stockDetail" style="position: absolute; right: 50px; top: 15px; z-index: 1;">
+                <el-button size="small" @click="openStockDetailWindow" title="新窗口打开">
+                    ↗️ 新窗口
+                </el-button>
+            </div>
             <div v-if="stockDetailLoading" style="text-align: center; padding: 40px; color: #909399;">
                 正在加载股票详情...
             </div>
@@ -3228,6 +3236,13 @@
                     } finally {
                         dividendLoading.value = false;
                     }
+                };
+
+                // 新窗口打开股票详情
+                const openStockDetailWindow = () => {
+                    if (!stockDetail.value?.code) return;
+                    const url = `/stock-detail.html?code=${stockDetail.value.code}`;
+                    window.open(url, '_blank');
                 };
 
                 // 监听K线数据变化，自动渲染图表
@@ -4239,6 +4254,7 @@
                     stockDetailLoading,
                     dividendLoading,
                     fetchStockDetail,
+                    openStockDetailWindow,
                     onDialogOpened,
                     klinePeriod,
                     klineLoading,
