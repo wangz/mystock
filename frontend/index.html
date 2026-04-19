@@ -1381,7 +1381,7 @@
                                         <button class="action-btn" @click="moveDown('watchlist', index)" :disabled="index === filteredWatchlist.length - 1" title="下移">⇩</button>
                                         <button class="action-btn" @click="openStockTags(stock)" title="标签" v-if="auth.isLoggedIn">🏷️</button>
                                         <button class="action-btn action-btn-delete" @click="deleteStock('watchlist', index)" title="删除">×</button>
-                                        <button class="action-btn action-btn-memo" @click="openMemo('watchlist', index)" title="备忘">{{ stock.memo ? '📝' : '📄' }}</button>
+                                        <button class="action-btn action-btn-memo" @click="openMemoByCode('watchlist', stock.code)" title="备忘">{{ stock.memo ? '📝' : '📄' }}</button>
                                     </div>
                                 </td>
                                 <td v-if="auth.isLoggedIn" style="min-width: 100px;">
@@ -3720,6 +3720,18 @@
                     showMemoModal.value = true;
                 };
 
+                const openMemoByCode = (listName, code) => {
+                    const list = listName === 'portfolio' ? portfolio : watchlist;
+                    const stock = list.value.find(s => s.code === code);
+                    if (stock) {
+                        currentMemoStock.value = stock;
+                        currentMemoStockIndex.value = list.value.indexOf(stock);
+                        currentMemoStockList.value = listName;
+                        currentMemoText.value = stock.memo || '';
+                        showMemoModal.value = true;
+                    }
+                };
+
                 // 保存备忘
                 const saveMemo = async () => {
                     if (!auth.value.isLoggedIn) {
@@ -4342,6 +4354,7 @@
                     restoreStock,
                     removeHistory,
                     openMemo,
+                    openMemoByCode,
                     deleteMemo,
                     saveMemo,
                     startAutoRefresh,
