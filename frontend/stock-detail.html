@@ -35,6 +35,23 @@
         .dividend-table td { color: #303133; }
         .dividend-table tr:hover { background: #fafafa; }
         .info-text { color: #606266; font-size: 13px; }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .card { padding: 12px; margin-bottom: 12px; }
+            .stock-title { font-size: 18px; }
+            .roe-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+            .roe-value { font-size: 16px; }
+            .section-title { font-size: 14px; }
+            .dividend-table { display: block; overflow-x: auto; white-space: nowrap; }
+            .dividend-table th, .dividend-table td { white-space: normal; min-width: 80px; }
+        }
+        
+        @media (max-width: 480px) {
+            .roe-grid { grid-template-columns: repeat(2, 1fr); }
+            .kline-tabs { flex-wrap: wrap; }
+            .kline-tabs button { flex: 1; text-align: center; }
+        }
     </style>
 </head>
 <body>
