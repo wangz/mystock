@@ -64,9 +64,6 @@ fi
 echo ""
 echo -e "${YELLOW}创建数据目录...${NC}"
 mkdir -p data 2>/dev/null || true
-touch portfolio_data.json 2>/dev/null || true
-touch stock_codes.json 2>/dev/null || true
-touch memos.json 2>/dev/null || true
 echo -e "${GREEN}✓${NC} 数据目录就绪"
 
 # 停止旧服务
