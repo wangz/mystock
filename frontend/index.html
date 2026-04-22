@@ -2697,21 +2697,31 @@
                     if (!confirm('确定要删除这只股票吗？')) return;
 
                     const list = listName === 'portfolio' ? portfolio : watchlist;
-                    const stock = list.value[index];
+                    const filteredList = listName === 'watchlist' ? filteredWatchlist : null;
 
-                    if (stock) {
+                    // 获取要删除的股票（通过 filteredWatchlist 或直接通过 index）
+                    const stock = filteredList ? filteredList.value[index] : list.value[index];
+                    if (!stock) return;
+
+                    // 在原始列表中找到该股票的实际索引
+                    const actualIndex = list.value.findIndex(s => s.code === stock.code);
+                    if (actualIndex === -1) return;
+
+                    const stockToDelete = list.value[actualIndex];
+
+                    if (stockToDelete) {
                         try {
                             await authFetch(`${API_BASE}/api/stock-history`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
-                                    name: stock.name,
-                                    code: stock.code,
+                                    name: stockToDelete.name,
+                                    code: stockToDelete.code,
                                     from: listName,
-                                    tags: stock.tags || []  // 保存标签信息
+                                    tags: stockToDelete.tags || []
                                 })
                             });
-                            list.value.splice(index, 1);
+                            list.value.splice(actualIndex, 1);
                             await saveStockOrder(listName, list.value);
                         } catch (error) {
                             console.error('删除股票失败:', error);
