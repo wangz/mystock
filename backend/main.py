@@ -1694,6 +1694,126 @@ def get_stock_dividend(code: str, refresh: bool = False):
     }
 
 
+@app.get("/api/performance-forecast")
+def get_performance_forecast(refresh: bool = False):
+    """
+    获取业绩预告数据（从iwencai获取）
+    返回所有业绩预增的股票
+    """
+    cache_key = 'performance_forecast'
+
+    # 尝试从缓存获取
+    if not refresh:
+        cached_data, is_cached, cached_at = get_cache(cache_key)
+        if is_cached and cached_data:
+            # 清理缓存中的异常浮点数
+            for item in cached_data:
+                if 'change_pct' in item and isinstance(item['change_pct'], float):
+                    if item['change_pct'] != item['change_pct'] or abs(item['change_pct']) == float('inf'):
+                        item['change_pct'] = 0
+            return {
+                'data': cached_data,
+                'cached': True,
+                'cached_at': cached_at.isoformat() if cached_at else None,
+                'total': len(cached_data)
+            }
+
+    # 获取新数据
+    try:
+        import pywencai
+        import pandas as pd
+        import math
+
+        result = pywencai.get(query='业绩预增', loop=True)
+
+        if isinstance(result, pd.DataFrame):
+            df = result
+        elif isinstance(result, dict):
+            for key, val in result.items():
+                if isinstance(val, pd.DataFrame) and len(val) > 0:
+                    df = val
+                    break
+        else:
+            return {'error': '无法获取数据', 'data': []}
+
+        # 处理数据
+        forecast_list = []
+        for _, row in df.iterrows():
+            try:
+                # 解析预告净利润（可能有各种格式）
+                profit = row.get('预告净利润[20260331]', row.get('预告净利润', ''))
+                last_profit = row.get('上年同期净利润[20260331]', row.get('上年同期净利润', ''))
+                change_pct = row.get('预告净利润变动幅度[20260331]', row.get('预告净利润变动幅度', ''))
+
+                # 处理异常值 - 检查是否为无效的float
+                def clean_float(val):
+                    if val is None:
+                        return 0
+                    if isinstance(val, float):
+                        # NaN 或无穷大
+                        if val != val or abs(val) == float('inf'):
+                            return 0
+                        return val
+                    try:
+                        f = float(val)
+                        if f != f or abs(f) == float('inf'):
+                            return 0
+                        return f
+                    except:
+                        return 0
+
+                # 格式化净利润（自动转换单位：少用万，多用亿）
+                def format_profit(val):
+                    if val is None or val == '':
+                        return '-'
+                    try:
+                        num = float(val)
+                        if abs(num) >= 100000000:  # >= 1亿
+                            return f"{num/100000000:.2f}亿"
+                        elif abs(num) >= 10000:  # >= 1万
+                            return f"{num/10000:.2f}万"
+                        else:
+                            return f"{num:.2f}元"
+                    except:
+                        return str(val)
+
+                change_pct = clean_float(change_pct)
+
+                date = row.get('业绩预告日期[20260331]', row.get('业绩预告日期', ''))
+                reason = row.get('业绩变化原因[20260331]', row.get('业绩变化原因', ''))
+                summary = row.get('业绩预告摘要[20260331]', row.get('业绩预告摘要', ''))
+                code = row.get('code', row.get('股票代码', ''))
+                name = row.get('股票简称', row.get('股票名称', ''))
+
+                forecast_list.append({
+                    'code': str(code) if code else '',
+                    'name': str(name) if name else '',
+                    'profit': format_profit(profit),
+                    'last_profit': format_profit(last_profit),
+                    'change_pct': change_pct,
+                    'date': str(date) if date else '',
+                    'reason': str(reason) if reason else '',
+                    'summary': str(summary) if summary else ''
+                })
+            except Exception as e:
+                continue
+
+        # 按日期排序（最新的在前）
+        forecast_list.sort(key=lambda x: x['date'], reverse=True)
+
+        # 保存缓存（1小时）
+        set_cache(cache_key, 'performance_forecast', forecast_list, 3600)
+
+        return {
+            'data': forecast_list,
+            'cached': False,
+            'total': len(forecast_list)
+        }
+
+    except Exception as e:
+        return {'error': str(e), 'data': []}
+
+
 @app.post("/api/cache/refresh/{code}")
 def refresh_dividend_cache(code: str):
     """手动刷新分红缓存"""

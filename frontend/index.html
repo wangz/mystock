@@ -844,6 +844,123 @@
             gap: 6px;
         }
 
+        /* 业绩预告样式 */
+        .forecast-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .forecast-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .forecast-content {
+            max-height: 320px;
+            overflow-y: auto;
+        }
+
+        .forecast-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .forecast-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .forecast-item:hover {
+            background: var(--bg-hover);
+            transform: translateX(2px);
+        }
+
+        .forecast-main {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .forecast-name {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .forecast-change {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .forecast-change.high {
+            background: #f56c6c;
+            color: white;
+        }
+
+        .forecast-change.medium {
+            background: #e6a23c;
+            color: white;
+        }
+
+        .forecast-change.normal {
+            background: #409eff;
+            color: white;
+        }
+
+        .forecast-detail {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .forecast-profit {
+            color: #f56c6c;
+        }
+
+        .forecast-date {
+            color: #909399;
+        }
+
+        .forecast-more {
+            text-align: center;
+            padding: 10px;
+            color: #409eff;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .forecast-more:hover {
+            color: #66b1ff;
+        }
+
+        .forecast-detail .high {
+            color: #f56c6c;
+            font-weight: 600;
+        }
+
+        .forecast-detail .medium {
+            color: #e6a23c;
+            font-weight: 600;
+        }
+
+        .forecast-detail .normal {
+            color: #409eff;
+            font-weight: 600;
+        }
+
         .shareholder-item-compact {
             display: flex;
             align-items: center;
@@ -1489,12 +1606,16 @@
                     <div class="analysis-header">
                         <el-radio-group v-model="activeAnalysisTab" size="small" @change="handleAnalysisTabChange">
                             <el-radio-button label="limitup">📊 打板分析</el-radio-button>
+                            <el-radio-button label="forecast">📢 业绩预告</el-radio-button>
                             <el-radio-button label="shareholder">💰 股东动态</el-radio-button>
                             <el-radio-button label="doublefive">🎯 双五</el-radio-button>
                             <el-radio-button label="r15">📈 R15</el-radio-button>
                         </el-radio-group>
                         <div style="margin-left: auto; display: flex; gap: 8px;">
                             <el-button size="small" @click="showLimitUpDetail = true" :disabled="!limitUpAnalysis" v-if="activeAnalysisTab === 'limitup'">
+                                详情
+                            </el-button>
+                            <el-button size="small" @click="showForecastDetail = true" :disabled="!performanceForecast.length" v-if="activeAnalysisTab === 'forecast'">
                                 详情
                             </el-button>
                             <el-button size="small" @click="showShareholderDetail = true; fetchShareholderActivityDetail()" :disabled="!shareholderActivity" v-if="activeAnalysisTab === 'shareholder'">
@@ -1506,7 +1627,7 @@
                             <el-button size="small" @click="showR15Detail = true" :disabled="!r15Stocks" v-if="activeAnalysisTab === 'r15'">
                                 详情
                             </el-button>
-                            <el-button size="small" @click="handleRefresh" :loading="activeAnalysisTab === 'limitup' ? limitUpLoading : (activeAnalysisTab === 'shareholder' ? shareholderLoading : (activeAnalysisTab === 'doublefive' ? doubleFiveLoading : r15Loading))">
+                            <el-button size="small" @click="handleRefresh" :loading="isRefreshingAnalysis">
                                 刷新
                             </el-button>
                         </div>
@@ -1554,6 +1675,38 @@
                         </div>
                         <div v-else style="text-align: center; padding: 20px; color: #909399;">
                             点击下方刷新按钮获取打板分析数据
+                        </div>
+                    </div>
+
+                    <!-- 业绩预告内容 -->
+                    <div class="analysis-content" v-if="activeAnalysisTab === 'forecast'">
+                        <div v-if="performanceForecast.length" class="forecast-content">
+                            <div class="forecast-header">
+                                <span class="forecast-title">📢 业绩预增 ({{ performanceForecast.length }}只)</span>
+                            </div>
+                            <div class="forecast-list">
+                                <div v-for="item in performanceForecast.slice(0, 15)" :key="item.code" class="forecast-item" @click="showForecastDetail = true">
+                                    <div class="forecast-main">
+                                        <span class="forecast-name">{{ item.name }}</span>
+                                        <span class="forecast-change" :class="item.change_pct > 100 ? 'high' : (item.change_pct > 50 ? 'medium' : 'normal')">
+                                            +{{ item.change_pct.toFixed(0) }}%
+                                        </span>
+                                    </div>
+                                    <div class="forecast-detail">
+                                        <span class="forecast-profit">{{ item.profit || '-' }}</span>
+                                        <span class="forecast-date">{{ item.date }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-if="performanceForecast.length > 15" class="forecast-more" @click="showForecastDetail = true">
+                                查看更多 ({{ performanceForecast.length }}只)
+                            </div>
+                        </div>
+                        <div v-else-if="forecastLoading" style="text-align: center; padding: 20px; color: #909399;">
+                            正在加载业绩预告数据...
+                        </div>
+                        <div v-else style="text-align: center; padding: 20px; color: #909399;">
+                            点击下方刷新按钮获取业绩预告数据
                         </div>
                     </div>
 
@@ -2054,6 +2207,71 @@
             </div>
         </el-dialog>
 
+        <!-- 业绩预告详情弹窗 -->
+        <el-dialog
+            v-model="showForecastDetail"
+            title="📢 业绩预告详情"
+            width="1000px"
+            top="5vh"
+        >
+            <div v-if="performanceForecast.length" class="forecast-detail">
+                <div style="margin-bottom: 15px; color: #909399;">
+                    共 {{ performanceForecast.length }} 只业绩预增股票 | 按公告日期排序
+                </div>
+                <el-table :data="performanceForecast" stripe size="small" max-height="500">
+                    <el-table-column label="序号" width="60" align="center">
+                        <template #default="{ $index }">
+                            {{ $index + 1 }}
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="股票" min-width="120">
+                        <template #default="{ row }">
+                            <span class="stock-name-link" @click="prepareAddStock(row.name)">{{ row.name }}</span>
+                            <span style="color: #909399; font-size: 12px; margin-left: 5px;">{{ row.code }}</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="预告净利润" min-width="120">
+                        <template #default="{ row }">
+                            <span style="color: #f56c6c; font-weight: 500;">{{ row.profit || '-' }}</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="上年同期" min-width="100">
+                        <template #default="{ row }">
+                            <span style="color: #909399;">{{ row.last_profit || '-' }}</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="变动幅度" width="100">
+                        <template #default="{ row }">
+                            <span :class="row.change_pct > 100 ? 'high' : (row.change_pct > 50 ? 'medium' : 'normal')" style="font-weight: 600;">
+                                +{{ row.change_pct.toFixed(0) }}%
+                            </span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="公告日期" width="100">
+                        <template #default="{ row }">
+                            {{ row.date || '-' }}
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="变动原因" min-width="200">
+                        <template #default="{ row }">
+                            <el-tooltip :content="row.reason" placement="top" :show-after="500">
+                                <span style="cursor: pointer; color: #409eff;">
+                                    {{ row.reason ? (row.reason.substring(0, 10) + '...') : '-' }}
+                                </span>
+                            </el-tooltip>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </div>
+            <div v-else-if="forecastLoading" style="text-align: center; padding: 60px 40px;">
+                <div class="loading-spinner"></div>
+                <div style="margin-top: 16px; color: #909399;">正在加载数据，请稍候...</div>
+            </div>
+            <div v-else style="text-align: center; padding: 40px;">
+                <el-empty description="暂无数据，请先点击刷新获取数据" />
+            </div>
+        </el-dialog>
+
         <!-- 双五详情弹窗 -->
         <el-dialog
             v-model="showDoubleFiveDetail"
@@ -2520,6 +2738,21 @@
                     shareholding: 1,
                     buyback: 1,
                     executive: 1
+                });
+
+                // 业绩预告数据
+                const performanceForecast = ref([]);
+                const forecastLoading = ref(false);
+                const showForecastDetail = ref(false);
+
+                // 计算刷新按钮loading状态
+                const isRefreshingAnalysis = computed(() => {
+                    if (activeAnalysisTab.value === 'limitup') return limitUpLoading.value;
+                    if (activeAnalysisTab.value === 'shareholder') return shareholderLoading.value;
+                    if (activeAnalysisTab.value === 'forecast') return forecastLoading.value;
+                    if (activeAnalysisTab.value === 'doublefive') return doubleFiveLoading.value;
+                    if (activeAnalysisTab.value === 'r15') return r15Loading.value;
+                    return false;
                 });
                 const pageSize = 15;
                 
@@ -4123,6 +4356,8 @@
                         fetchShareholderActivity();
                     } else if (tabName === 'r15' && !r15Stocks.value) {
                         fetchR15Stocks();
+                    } else if (tabName === 'forecast' && !performanceForecast.value.length) {
+                        fetchPerformanceForecast();
                     }
                 };
 
@@ -4132,10 +4367,29 @@
                         fetchLimitUpAnalysis();
                     } else if (activeAnalysisTab.value === 'shareholder') {
                         fetchShareholderActivity();
+                    } else if (activeAnalysisTab.value === 'forecast') {
+                        fetchPerformanceForecast(true);
                     } else if (activeAnalysisTab.value === 'doublefive') {
                         fetchDoubleFiveStocks();
                     } else if (activeAnalysisTab.value === 'r15') {
                         fetchR15Stocks();
+                    }
+                };
+
+                // 获取业绩预告数据
+                const fetchPerformanceForecast = async (refresh = false) => {
+                    forecastLoading.value = true;
+                    try {
+                        const url = refresh ? `${API_BASE}/api/performance-forecast?refresh=true` : `${API_BASE}/api/performance-forecast`;
+                        const response = await fetch(url);
+                        const data = await response.json();
+                        if (data.data) {
+                            performanceForecast.value = data.data;
+                        }
+                    } catch (error) {
+                        console.error('获取业绩预告失败:', error);
+                    } finally {
+                        forecastLoading.value = false;
                     }
                 };
 
@@ -4305,6 +4559,10 @@
                     executiveList,
                     fetchShareholderActivity,
                     fetchShareholderActivityDetail,
+                    performanceForecast,
+                    forecastLoading,
+                    showForecastDetail,
+                    fetchPerformanceForecast,
                     doubleFiveStocks,
                     doubleFiveLoading,
                     showDoubleFiveDetail,
