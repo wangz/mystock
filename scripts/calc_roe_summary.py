@@ -58,10 +58,10 @@ def calculate_roe_summary():
     codes = [row[0] for row in cursor.fetchall()]
     print(f"找到 {len(codes)} 只股票有年末ROE数据")
 
-    # 过滤条件：ROE 在合理范围内 (-50% ~ 100%)
+    # 过滤条件：ROE 在合理范围内 (-50% ~ 150%)
     # 超过这个范围的通常是公司重组等特殊情况，不参与平均计算
     ROE_MIN = -50
-    ROE_MAX = 100
+    ROE_MAX = 150
 
     print(f"ROE 过滤范围: {ROE_MIN}% ~ {ROE_MAX}%")
 
