@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>业绩预告详情</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; min-height: 100vh; }
+        .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
+        .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+        .loading { text-align: center; padding: 60px; color: #909399; }
+        .back-link { color: #409eff; text-decoration: none; display: inline-block; margin-bottom: 15px; }
+        .back-link:hover { text-decoration: underline; }
+        .header { display: flex; align-items: center; margin-bottom: 20px; }
+        .title { font-size: 20px; font-weight: 600; color: #303133; }
+        .subtitle { color: #909399; font-size: 14px; margin-left: 20px; }
+        .summary { margin-bottom: 15px; padding: 12px; background: #f5f7fa; border-radius: 4px; color: #606266; font-size: 14px; }
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+        th { background: #fafafa; color: #909399; font-weight: normal; position: sticky; top: 0; }
+        td { color: #303133; }
+        tr:hover { background: #fafafa; }
+        .stock-link { color: #409eff; cursor: pointer; text-decoration: none; }
+        .stock-link:hover { text-decoration: underline; }
+        .stock-code { color: #909399; font-size: 12px; margin-left: 5px; }
+        .change-high { color: #f56c6c; font-weight: 600; }
+        .change-medium { color: #e6a23c; font-weight: 600; }
+        .change-normal { color: #67c23a; font-weight: 600; }
+        .reason-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; color: #409eff; }
+        .empty { text-align: center; padding: 60px; color: #909399; }
+        .loading-spinner {
+            border: 3px solid #f0f0f0;
+            border-top: 3px solid #409eff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .card { padding: 12px; margin-bottom: 12px; }
+            .title { font-size: 16px; }
+            .subtitle { margin-left: 10px; font-size: 12px; }
+            table { font-size: 12px; }
+            th, td { padding: 8px 6px; }
+            .reason-cell { max-width: 120px; }
+            .header { flex-wrap: wrap; gap: 8px; }
+        }
+        
+        @media (max-width: 480px) {
+            .title { font-size: 14px; }
+            table { display: block; overflow-x: auto; white-space: nowrap; }
+            th, td { white-space: normal; min-width: 80px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← 返回主页</a>
+        
+        <div id="loading" class="loading">
+            <div class="loading-spinner"></div>
+            <div>正在加载数据...</div>
+        </div>
+        
+        <div id="content" style="display:none;">
+            <div class="card">
+                <div class="header">
+                    <span class="title">📢 业绩预告详情</span>
+                    <span id="subtitle" class="subtitle"></span>
+                </div>
+                
+                <div id="summary" class="summary"></div>
+                
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 50px; text-align: center;">序号</th>
+                                <th style="min-width: 100px;">股票</th>
+                                <th style="min-width: 100px;">预告净利润</th>
+                                <th style="min-width: 90px;">上年同期</th>
+                                <th style="width: 80px;">变动幅度</th>
+                                <th style="width: 90px;">公告日期</th>
+                                <th style="min-width: 180px;">变动原因</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+                
+                <div id="empty" class="empty" style="display:none;">暂无数据</div>
+            </div>
+        </div>
+        
+        <div id="error" class="card" style="display:none;">
+            <div style="text-align: center; padding: 40px; color: #f56c6c;">
+                <div id="errorMsg"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        var API_BASE = '';
+        
+        function fetchData() {
+            var loading = document.getElementById('loading');
+            var content = document.getElementById('content');
+            var error = document.getElementById('error');
+            
+            loading.style.display = 'block';
+            
+            fetch(API_BASE + '/api/performance-forecast')
+                .then(function(res) { return res.json(); })
+                .then(function(result) {
+                    var data = result.data || [];
+                    
+                    loading.style.display = 'none';
+                    
+                    if (data.length === 0) {
+                        document.getElementById('empty').style.display = 'block';
+                        content.style.display = 'block';
+                        return;
+                    }
+                    
+                    document.title = '业绩预告详情 (' + data.length + '只)';
+                    document.getElementById('subtitle').textContent = '共 ' + data.length + ' 只业绩预增股票 | 按公告日期排序';
+                    document.getElementById('summary').textContent = '数据按公告日期倒序排列，可点击股票名称查看详情';
+                    
+                    var tbody = document.getElementById('tableBody');
+                    tbody.innerHTML = '';
+                    
+                    data.forEach(function(item, idx) {
+                        var tr = document.createElement('tr');
+                        
+                        var changeClass = 'change-normal';
+                        if (item.change_pct > 100) changeClass = 'change-high';
+                        else if (item.change_pct > 50) changeClass = 'change-medium';
+                        
+                        var reasonText = item.reason || '-';
+                        var reasonDisplay = reasonText.length > 20 ? reasonText.substring(0, 20) + '...' : reasonText;
+                        
+                        tr.innerHTML = 
+                            '<td style="text-align: center;">' + (idx + 1) + '</td>' +
+                            '<td>' +
+                                '<a class="stock-link" onclick="openStockDetail(\'' + item.name + '\')">' + item.name + '</a>' +
+                                '<span class="stock-code">' + item.code + '</span>' +
+                            '</td>' +
+                            '<td style="color: #f56c6c; font-weight: 500;">' + (item.profit || '-') + '</td>' +
+                            '<td style="color: #909399;">' + (item.last_profit || '-') + '</td>' +
+                            '<td class="' + changeClass + '">+' + (item.change_pct || 0).toFixed(0) + '%</td>' +
+                            '<td>' + (item.date || '-') + '</td>' +
+                            '<td class="reason-cell" title="' + reasonText + '">' + reasonDisplay + '</td>';
+                        
+                        tbody.appendChild(tr);
+                    });
+                    
+                    content.style.display = 'block';
+                })
+                .catch(function(e) {
+                    loading.style.display = 'none';
+                    error.style.display = 'block';
+                    document.getElementById('errorMsg').textContent = '加载失败: ' + e.message;
+                });
+        }
+        
+        function openStockDetail(name) {
+            var url = '/stock-detail.html?code=' + encodeURIComponent(name);
+            window.open(url, '_blank');
+        }
+        
+        fetchData();
+    </script>
+</body>
+</html>

@@ -863,6 +863,11 @@
             overflow-y: auto;
         }
 
+        .analysis-content .forecast-content {
+            max-height: none;
+            overflow-y: visible;
+        }
+
         .forecast-list {
             display: flex;
             flex-direction: column;
@@ -2210,14 +2215,22 @@
         <!-- 业绩预告详情弹窗 -->
         <el-dialog
             v-model="showForecastDetail"
-            title="📢 业绩预告详情"
             width="1000px"
             top="5vh"
+            :show-close="true"
         >
-            <div v-if="performanceForecast.length" class="forecast-detail">
-                <div style="margin-bottom: 15px; color: #909399;">
-                    共 {{ performanceForecast.length }} 只业绩预增股票 | 按公告日期排序
+            <template #header>
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <span>📢 业绩预告详情</span>
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <span style="font-size: 14px; font-weight: normal; color: #909399;">
+                            共 {{ performanceForecast.length }} 只业绩预增股票 | 按公告日期排序
+                        </span>
+                        <el-button size="small" @click="openForecastDetail">新窗口打开</el-button>
+                    </div>
                 </div>
+            </template>
+            <div v-if="performanceForecast.length" class="forecast-detail">
                 <el-table :data="performanceForecast" stripe size="small" max-height="500">
                     <el-table-column label="序号" width="60" align="center">
                         <template #default="{ $index }">
@@ -4393,6 +4406,11 @@
                     }
                 };
 
+                // 新窗口打开业绩预告详情
+                const openForecastDetail = () => {
+                    window.open('/forecast-detail.html', '_blank');
+                };
+
                 // 获取双五股票
                 const fetchDoubleFiveStocks = async () => {
                     doubleFiveLoading.value = true;
@@ -4577,6 +4595,7 @@
                     fetchR15Stocks,
                     handleTabChange,
                     handleRefresh,
+                    openForecastDetail,
                     handleAnalysisTabChange,
                     formatMoney,
                     formatMarketCap,
