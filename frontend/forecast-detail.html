@@ -151,7 +151,7 @@
                         tr.innerHTML = 
                             '<td style="text-align: center;">' + (idx + 1) + '</td>' +
                             '<td>' +
-                                '<a class="stock-link" onclick="openStockDetail(\'' + item.name + '\')">' + item.name + '</a>' +
+                                '<a class="stock-link" onclick="openStockDetail(\'' + item.code + '\')">' + item.name + '</a>' +
                                 '<span class="stock-code">' + item.code + '</span>' +
                             '</td>' +
                             '<td style="color: #f56c6c; font-weight: 500;">' + (item.profit || '-') + '</td>' +
@@ -172,8 +172,26 @@
                 });
         }
         
-        function openStockDetail(name) {
-            var url = '/stock-detail.html?code=' + encodeURIComponent(name);
+        function getStockCode(code) {
+            if (!code) return '';
+            code = code.toString();
+            if (code.startsWith('sh') || code.startsWith('sz')) {
+                return code;
+            }
+            if (code.length === 6) {
+                var firstDigit = code.charAt(0);
+                if (firstDigit === '6') {
+                    return 'sh' + code;
+                } else {
+                    return 'sz' + code;
+                }
+            }
+            return code;
+        }
+        
+        function openStockDetail(code) {
+            var fullCode = getStockCode(code);
+            var url = '/stock-detail.html?code=' + encodeURIComponent(fullCode);
             window.open(url, '_blank');
         }
         
