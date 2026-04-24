@@ -178,6 +178,49 @@ def init_all():
     """初始化数据库并迁移数据"""
     init_database()
     migrate_old_data()
+    migrate_memos_created_at()
+
+def migrate_memos_created_at():
+    """迁移备忘录的创建时间字段"""
+    import sqlite3
+    import json
+    from datetime import datetime
+
+    logger.info("开始迁移备忘录创建时间...")
+    
+    conn = sqlite3.connect(USER_DB)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('SELECT user_id, json_value FROM user_data WHERE data_type = ?', ('memos',))
+        rows = cursor.fetchall()
+        
+        migrated_count = 0
+        for user_id, json_value in rows:
+            memos = json.loads(json_value)
+            modified = False
+            
+            for code, data in memos.items():
+                if 'created_at' not in data:
+                    data['created_at'] = data.get('updated_at', datetime.now().isoformat())
+                    modified = True
+            
+            if modified:
+                cursor.execute(
+                    'UPDATE user_data SET json_value = ? WHERE user_id = ? AND data_type = ?',
+                    (json.dumps(memos), user_id, 'memos')
+                )
+                migrated_count += 1
+        
+        if migrated_count > 0:
+            conn.commit()
+            logger.info(f"备忘录创建时间迁移完成: {migrated_count} 条")
+        else:
+            logger.info("备忘录创建时间无需迁移")
+    except Exception as e:
+        logger.error(f"备忘录创建时间迁移失败: {e}")
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     init_all()
