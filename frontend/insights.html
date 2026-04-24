@@ -152,7 +152,7 @@
                     <div v-for="item in todayItems" :key="item.id" class="insight-card" :class="item.type === 'insight' ? 'type-insight' : 'type-memo'" @click="goToDetail(item)">
                         <div class="card-header">
                             <div class="card-stock" v-if="item.type === 'memo'"><span class="stock-name">{{ item.name }}</span><span class="stock-code">{{ item.code }}</span></div>
-                            <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : (item.from === 'portfolio' ? 'tag-portfolio' : 'tag-watchlist')">{{ item.type === 'insight' ? '💡 感悟' : (item.from === 'portfolio' ? '📈 持仓' : '👁️ 观察') }}</span>
+                            <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : 'tag-memo'">{{ item.type === 'insight' ? '💡 感悟' : (item.sources?.includes('portfolio') && item.sources?.includes('watchlist') ? '📈持仓+👁️观察' : (item.sources?.includes('portfolio') ? '📈 持仓' : '👁️ 观察')) }}</span>
                         </div>
                         <div class="card-content">{{ item.content }}</div>
                         <div class="card-time">{{ item.type === 'memo' && item.created_at ? '创建: ' + formatTime(item.created_at) + ' 更新: ' + formatTime(item.updated_at) : formatTime(item.updated_at) }}</div>
@@ -167,7 +167,7 @@
                     <div v-for="item in weekItems" :key="item.id" class="insight-card" :class="item.type === 'insight' ? 'type-insight' : 'type-memo'" @click="goToDetail(item)">
                         <div class="card-header">
                             <div class="card-stock" v-if="item.type === 'memo'"><span class="stock-name">{{ item.name }}</span><span class="stock-code">{{ item.code }}</span></div>
-                            <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : (item.from === 'portfolio' ? 'tag-portfolio' : 'tag-watchlist')">{{ item.type === 'insight' ? '💡 感悟' : (item.from === 'portfolio' ? '📈 持仓' : '👁️ 观察') }}</span>
+                            <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : 'tag-memo'">{{ item.type === 'insight' ? '💡 感悟' : (item.sources?.includes('portfolio') && item.sources?.includes('watchlist') ? '📈持仓+👁️观察' : (item.sources?.includes('portfolio') ? '📈 持仓' : '👁️ 观察')) }}</span>
                         </div>
                         <div class="card-content">{{ item.content }}</div>
                         <div class="card-time">{{ item.type === 'memo' && item.created_at ? '创建: ' + formatTime(item.created_at) + ' 更新: ' + formatTime(item.updated_at) : formatTime(item.updated_at) }}</div>
@@ -182,7 +182,7 @@
                     <div v-for="item in monthItems" :key="item.id" class="insight-card" :class="item.type === 'insight' ? 'type-insight' : 'type-memo'" @click="goToDetail(item)">
                         <div class="card-header">
                             <div class="card-stock" v-if="item.type === 'memo'"><span class="stock-name">{{ item.name }}</span><span class="stock-code">{{ item.code }}</span></div>
-                            <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : (item.from === 'portfolio' ? 'tag-portfolio' : 'tag-watchlist')">{{ item.type === 'insight' ? '💡 感悟' : (item.from === 'portfolio' ? '📈 持仓' : '👁️ 观察') }}</span>
+                            <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : 'tag-memo'">{{ item.type === 'insight' ? '💡 感悟' : (item.sources?.includes('portfolio') && item.sources?.includes('watchlist') ? '📈持仓+👁️观察' : (item.sources?.includes('portfolio') ? '📈 持仓' : '👁️ 观察')) }}</span>
                         </div>
                         <div class="card-content">{{ item.content }}</div>
                         <div class="card-time">{{ item.type === 'memo' && item.created_at ? '创建: ' + formatTime(item.created_at) + ' 更新: ' + formatTime(item.updated_at) : formatTime(item.updated_at) }}</div>
@@ -197,7 +197,7 @@
                     <div v-for="item in earlierItems" :key="item.id" class="insight-card" :class="item.type === 'insight' ? 'type-insight' : 'type-memo'" @click="goToDetail(item)">
                         <div class="card-header">
                             <div class="card-stock" v-if="item.type === 'memo'"><span class="stock-name">{{ item.name }}</span><span class="stock-code">{{ item.code }}</span></div>
-                            <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : (item.from === 'portfolio' ? 'tag-portfolio' : 'tag-watchlist')">{{ item.type === 'insight' ? '💡 感悟' : (item.from === 'portfolio' ? '📈 持仓' : '👁️ 观察') }}</span>
+                            <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : 'tag-memo'">{{ item.type === 'insight' ? '💡 感悟' : (item.sources?.includes('portfolio') && item.sources?.includes('watchlist') ? '📈持仓+👁️观察' : (item.sources?.includes('portfolio') ? '📈 持仓' : '👁️ 观察')) }}</span>
                         </div>
                         <div class="card-content">{{ item.content }}</div>
                         <div class="card-time">{{ item.type === 'memo' && item.created_at ? '创建: ' + formatTime(item.created_at) + ' 更新: ' + formatTime(item.updated_at) : formatTime(item.updated_at) }}</div>
@@ -322,20 +322,43 @@
                             items.push({ id: `i-${idx}`, type: 'insight', content: insight.content, updated_at: insight.time });
                         });
 
-                        // Add portfolio memos
+                        // Add portfolio and watchlist memos (deduplicate)
+                        const memoMap = new Map();
+                        
                         portfolio.forEach(stock => {
                             const m = memos[stock.code] || {};
                             if (m.memo) {
-                                items.push({ id: `p-${stock.code}`, type: 'memo', name: stock.name, code: stock.code, from: 'portfolio', content: m.memo, created_at: m.created_at, updated_at: m.updated_at });
+                                if (!memoMap.has(stock.code)) {
+                                    memoMap.set(stock.code, { name: stock.name, code: stock.code, content: m.memo, created_at: m.created_at, updated_at: m.updated_at, sources: [] });
+                                }
+                                memoMap.get(stock.code).sources.push('portfolio');
                             }
                         });
 
-                        // Add watchlist memos
                         watchlist.forEach(stock => {
                             const m = memos[stock.code] || {};
                             if (m.memo) {
-                                items.push({ id: `w-${stock.code}`, type: 'memo', name: stock.name, code: stock.code, from: 'watchlist', content: m.memo, created_at: m.created_at, updated_at: m.updated_at });
+                                if (!memoMap.has(stock.code)) {
+                                    memoMap.set(stock.code, { name: stock.name, code: stock.code, content: m.memo, created_at: m.created_at, updated_at: m.updated_at, sources: [] });
+                                }
+                                if (!memoMap.get(stock.code).sources.includes('watchlist')) {
+                                    memoMap.get(stock.code).sources.push('watchlist');
+                                }
                             }
+                        });
+
+                        // Add deduped memos to items
+                        memoMap.forEach((data) => {
+                            items.push({ 
+                                id: `m-${data.code}`, 
+                                type: 'memo', 
+                                name: data.name, 
+                                code: data.code, 
+                                sources: data.sources,
+                                content: data.content, 
+                                created_at: data.created_at, 
+                                updated_at: data.updated_at 
+                            });
                         });
 
                         // Sort by date descending
