@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投资洞察</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/element-plus"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus/dist/index.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-color: #f5f7fa;
+            --card-bg: #ffffff;
+            --text-primary: #303133;
+            --text-secondary: #606266;
+            --text-tertiary: #909399;
+            --border-color: #e4e7ed;
+            --primary-color: #409eff;
+            --success-color: #67c23a;
+            --warning-color: #e6a23c;
+            --danger-color: #f56c6c;
+            --column-today: #e6f7ff;
+            --column-yesterday: #fff7e6;
+            --column-week: #f6ffed;
+            --column-earlier: #f5f5f5;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-color); min-height: 100vh; }
+        .app-container { min-height: 100vh; }
+
+        .header-section {
+            background: var(--card-bg);
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .header-left { display: flex; align-items: center; gap: 20px; }
+        .header-title { font-size: 20px; font-weight: 600; color: var(--text-primary); }
+        .back-link { color: var(--primary-color); text-decoration: none; font-size: 14px; }
+        .back-link:hover { text-decoration: underline; }
+
+        .insight-tabs { background: white; padding: 0 20px; border-bottom: 1px solid var(--border-color); }
+        .insight-tabs .el-tabs__item { font-size: 15px; }
+
+        .trello-container {
+            display: flex;
+            gap: 16px;
+            padding: 16px;
+            min-height: calc(100vh - 120px);
+            overflow-x: auto;
+        }
+        .trello-column {
+            flex: 1;
+            min-width: 260px;
+            max-width: 320px;
+            border-radius: 10px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+        }
+        .column-today { background: var(--column-today); }
+        .column-yesterday { background: var(--column-yesterday); }
+        .column-week { background: var(--column-week); }
+        .column-earlier { background: var(--column-earlier); }
+
+        .column-header {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 2px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .column-count { background: rgba(0,0,0,0.1); padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+
+        .insight-card {
+            background: var(--card-bg);
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+            border-left: 3px solid var(--primary-color);
+        }
+        .insight-card:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+        .insight-card.type-insight { border-left-color: var(--warning-color); }
+        .insight-card.type-memo { border-left-color: var(--primary-color); }
+
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .card-stock { display: flex; align-items: center; gap: 6px; }
+        .stock-name { font-weight: 600; color: var(--text-primary); font-size: 14px; }
+        .stock-code { color: var(--text-tertiary); font-size: 11px; }
+        .stock-tag { font-size: 10px; padding: 2px 6px; border-radius: 3px; }
+        .tag-insight { background: #fdf6ec; color: #e6a23c; }
+        .tag-memo { background: #d9ecff; color: #409eff; }
+        .tag-portfolio { background: #e1f3d8; color: #67c23a; }
+        .tag-watchlist { background: #d9ecff; color: #409eff; }
+
+        .card-content { color: var(--text-secondary); font-size: 12px; line-height: 1.4; margin-bottom: 6px; max-height: 50px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+        .card-time { color: var(--text-tertiary); font-size: 10px; }
+
+        .empty-column { text-align: center; padding: 20px; color: var(--text-tertiary); font-size: 13px; }
+        .loading-container { display: flex; justify-content: center; align-items: center; min-height: 60vh; }
+        .not-login-container { display: flex; flex-direction: column; align-items: center; gap: 15px; padding: 60px; }
+
+        @media (max-width: 768px) {
+            .trello-container { padding: 10px; gap: 10px; }
+            .trello-column { min-width: 220px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="app-container">
+        <div class="header-section">
+            <div class="header-left">
+                <a href="/" class="back-link">← 返回主页</a>
+                <span class="header-title">💡 投资洞察</span>
+            </div>
+            <el-button type="primary" size="small" @click="loadData">刷新</el-button>
+        </div>
+
+        <div class="insight-tabs">
+            <el-tabs v-model="activeTab">
+                <el-tab-pane label="全部" name="all"></el-tab-pane>
+                <el-tab-pane label="💡 我又悟了" name="insight"></el-tab-pane>
+                <el-tab-pane label="📝 个股备忘" name="memo"></el-tab-pane>
+            </el-tabs>
+        </div>
+
+        <div v-if="loading" class="loading-container">
+            <el-icon class="is-loading" size="32"><i class="el-icon-loading"></i></el-icon>
+            <span style="margin-left: 10px; color: #909399;">加载中...</span>
+        </div>
+
+        <div v-else-if="notLoggedIn" class="not-login-container">
+            <div style="color: #909399; font-size: 15px;">请先登录后查看投资洞察</div>
+            <el-button type="primary" @click="window.location.href = '/'">返回主页登录</el-button>
+        </div>
+
+        <div v-else class="trello-container">
+            <div class="trello-column column-today">
+                <div class="column-header"><span>📅 今天</span><span class="column-count">{{ todayItems.length }}</span></div>
+                <div v-if="todayItems.length === 0" class="empty-column">暂无今日记录</div>
+                <div v-else>
+                    <div v-for="item in todayItems" :key="item.id" class="insight-card" :class="item.type === 'insight' ? 'type-insight' : 'type-memo'" @click="goToDetail(item)">
+                        <div class="card-header">
+                            <div class="card-stock" v-if="item.type === 'memo'"><span class="stock-name">{{ item.name }}</span><span class="stock-code">{{ item.code }}</span></div>
+                            <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : (item.from === 'portfolio' ? 'tag-portfolio' : 'tag-watchlist')">{{ item.type === 'insight' ? '💡 感悟' : (item.from === 'portfolio' ? '📈 持仓' : '👁️ 观察') }}</span>
+                        </div>
+                        <div class="card-content">{{ item.content }}</div>
+                        <div class="card-time">{{ item.type === 'memo' && item.created_at ? '创建: ' + formatTime(item.created_at) + ' 更新: ' + formatTime(item.updated_at) : formatTime(item.updated_at) }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="trello-column column-week">
+                <div class="column-header"><span>📆 本周</span><span class="column-count">{{ weekItems.length }}</span></div>
+                <div v-if="weekItems.length === 0" class="empty-column">暂无本周记录</div>
+                <div v-else>
+                    <div v-for="item in weekItems" :key="item.id" class="insight-card" :class="item.type === 'insight' ? 'type-insight' : 'type-memo'" @click="goToDetail(item)">
+                        <div class="card-header">
+                            <div class="card-stock" v-if="item.type === 'memo'"><span class="stock-name">{{ item.name }}</span><span class="stock-code">{{ item.code }}</span></div>
+                            <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : (item.from === 'portfolio' ? 'tag-portfolio' : 'tag-watchlist')">{{ item.type === 'insight' ? '💡 感悟' : (item.from === 'portfolio' ? '📈 持仓' : '👁️ 观察') }}</span>
+                        </div>
+                        <div class="card-content">{{ item.content }}</div>
+                        <div class="card-time">{{ item.type === 'memo' && item.created_at ? '创建: ' + formatTime(item.created_at) + ' 更新: ' + formatTime(item.updated_at) : formatTime(item.updated_at) }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="trello-column column-yesterday">
+                <div class="column-header"><span>📆 本月</span><span class="column-count">{{ monthItems.length }}</span></div>
+                <div v-if="monthItems.length === 0" class="empty-column">暂无本月记录</div>
+                <div v-else>
+                    <div v-for="item in monthItems" :key="item.id" class="insight-card" :class="item.type === 'insight' ? 'type-insight' : 'type-memo'" @click="goToDetail(item)">
+                        <div class="card-header">
+                            <div class="card-stock" v-if="item.type === 'memo'"><span class="stock-name">{{ item.name }}</span><span class="stock-code">{{ item.code }}</span></div>
+                            <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : (item.from === 'portfolio' ? 'tag-portfolio' : 'tag-watchlist')">{{ item.type === 'insight' ? '💡 感悟' : (item.from === 'portfolio' ? '📈 持仓' : '👁️ 观察') }}</span>
+                        </div>
+                        <div class="card-content">{{ item.content }}</div>
+                        <div class="card-time">{{ item.type === 'memo' && item.created_at ? '创建: ' + formatTime(item.created_at) + ' 更新: ' + formatTime(item.updated_at) : formatTime(item.updated_at) }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="trello-column column-earlier">
+                <div class="column-header"><span>📚 更早</span><span class="column-count">{{ earlierItems.length }}</span></div>
+                <div v-if="earlierItems.length === 0" class="empty-column">暂无更早记录</div>
+                <div v-else>
+                    <div v-for="item in earlierItems" :key="item.id" class="insight-card" :class="item.type === 'insight' ? 'type-insight' : 'type-memo'" @click="goToDetail(item)">
+                        <div class="card-header">
+                            <div class="card-stock" v-if="item.type === 'memo'"><span class="stock-name">{{ item.name }}</span><span class="stock-code">{{ item.code }}</span></div>
+                            <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : (item.from === 'portfolio' ? 'tag-portfolio' : 'tag-watchlist')">{{ item.type === 'insight' ? '💡 感悟' : (item.from === 'portfolio' ? '📈 持仓' : '👁️ 观察') }}</span>
+                        </div>
+                        <div class="card-content">{{ item.content }}</div>
+                        <div class="card-time">{{ item.type === 'memo' && item.created_at ? '创建: ' + formatTime(item.created_at) + ' 更新: ' + formatTime(item.updated_at) : formatTime(item.updated_at) }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted } = Vue;
+
+        const app = createApp({
+            setup() {
+                const loading = ref(true);
+                const activeTab = ref('all');
+                const allItems = ref([]);
+                const notLoggedIn = ref(false);
+
+                // Date helpers
+                const getDateStr = (timeStr) => {
+                    if (!timeStr) return '';
+                    return timeStr.split('T')[0].replace(/\//g, '-');
+                };
+
+                const todayStr = (() => {
+                    const d = new Date();
+                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                })();
+
+                const weekStartStr = (() => {
+                    const d = new Date();
+                    const day = d.getDay();
+                    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+                    d.setDate(diff);
+                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                })();
+
+                const monthStartStr = (() => {
+                    const d = new Date();
+                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+                })();
+
+                // Categorize items by time and type
+                const categorizedItems = computed(() => {
+                    const filtered = activeTab.value === 'all' ? allItems.value :
+                                     activeTab.value === 'insight' ? allItems.value.filter(i => i.type === 'insight') :
+                                     allItems.value.filter(i => i.type === 'memo');
+
+                    const today = [], week = [], month = [], earlier = [];
+
+                    filtered.forEach(item => {
+                        const date = getDateStr(item.updated_at);
+                        if (!date) {
+                            earlier.push(item);
+                        } else if (date === todayStr) {
+                            today.push(item);
+                        } else if (date >= weekStartStr) {
+                            week.push(item);
+                        } else if (date >= monthStartStr) {
+                            month.push(item);
+                        } else {
+                            earlier.push(item);
+                        }
+                    });
+
+                    return { today, week, month, earlier };
+                });
+
+                const todayItems = computed(() => categorizedItems.value.today);
+                const weekItems = computed(() => categorizedItems.value.week);
+                const monthItems = computed(() => categorizedItems.value.month);
+                const earlierItems = computed(() => categorizedItems.value.earlier);
+
+                const formatTime = (timeStr) => {
+                    if (!timeStr) return '';
+                    try {
+                        const date = new Date(timeStr);
+                        return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                    } catch (e) { return timeStr; }
+                };
+
+                const loadData = async () => {
+                    loading.value = true;
+                    try {
+                        const token = localStorage.getItem('auth_token');
+                        const authUser = localStorage.getItem('auth_user');
+                        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+                        if (!token || !authUser) {
+                            allItems.value = [];
+                            notLoggedIn.value = true;
+                            loading.value = false;
+                            return;
+                        }
+                        notLoggedIn.value = false;
+
+                        // Fetch all data in parallel
+                        const [insightRes, portRes, watchRes, memoRes] = await Promise.all([
+                            fetch('/api/insights', { headers }),
+                            fetch('/api/portfolio', { headers }),
+                            fetch('/api/watchlist', { headers }),
+                            fetch('/api/stock-memo', { headers })
+                        ]);
+
+                        const [insightData, portData, watchData, memoData] = await Promise.all([
+                            insightRes.json(),
+                            portRes.json(),
+                            watchRes.json(),
+                            memoRes.json()
+                        ]);
+
+                        const insightsList = insightData.insights || [];
+                        const portfolio = portData.portfolio || [];
+                        const watchlist = watchData.watchlist || [];
+                        const memos = memoData.memos || {};
+
+                        const items = [];
+
+                        // Add insights
+                        insightsList.forEach((insight, idx) => {
+                            items.push({ id: `i-${idx}`, type: 'insight', content: insight.content, updated_at: insight.time });
+                        });
+
+                        // Add portfolio memos
+                        portfolio.forEach(stock => {
+                            const m = memos[stock.code] || {};
+                            if (m.memo) {
+                                items.push({ id: `p-${stock.code}`, type: 'memo', name: stock.name, code: stock.code, from: 'portfolio', content: m.memo, created_at: m.created_at, updated_at: m.updated_at });
+                            }
+                        });
+
+                        // Add watchlist memos
+                        watchlist.forEach(stock => {
+                            const m = memos[stock.code] || {};
+                            if (m.memo) {
+                                items.push({ id: `w-${stock.code}`, type: 'memo', name: stock.name, code: stock.code, from: 'watchlist', content: m.memo, created_at: m.created_at, updated_at: m.updated_at });
+                            }
+                        });
+
+                        // Sort by date descending
+                        items.sort((a, b) => {
+                            if (!a.updated_at) return 1;
+                            if (!b.updated_at) return -1;
+                            return new Date(b.updated_at) - new Date(a.updated_at);
+                        });
+
+                        allItems.value = items;
+                    } catch (error) {
+                        console.error('加载数据失败:', error);
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const goToDetail = (item) => {
+                    if (item.type === 'memo' && item.code) {
+                        window.location.href = `/stock-detail.html?code=${item.code}`;
+                    }
+                };
+
+                onMounted(() => { loadData(); });
+
+                return { loading, activeTab, notLoggedIn, todayItems, weekItems, monthItems, earlierItems, formatTime, goToDetail, loadData };
+            }
+        });
+
+        app.use(ElementPlus);
+        app.mount('#app');
+    </script>
+</body>
+</html>

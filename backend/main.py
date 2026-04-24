@@ -1088,10 +1088,13 @@ def save_memo(memo_data: dict, current_user: dict = Depends(get_current_user)):
     memos = json.loads(row[0]) if row else {}
 
     if memo and code:
+        now = datetime.now().isoformat()
+        existing = memos.get(code, {})
         memos[code] = {
             'name': name,
             'memo': memo,
-            'updated_at': datetime.now().isoformat()
+            'created_at': existing.get('created_at', now),  # 保持原有创建时间
+            'updated_at': now
         }
     elif code in memos:
         del memos[code]
