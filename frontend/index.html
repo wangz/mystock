@@ -98,6 +98,19 @@
             background: var(--bg-secondary);
             min-height: 100vh;
             overflow-y: auto;
+            overflow-x: auto;
+        }
+
+        @media (max-width: 768px) {
+            body, html {
+                overflow-x: scroll;
+            }
+            .app-container {
+                min-width: 800px;
+            }
+            .main-content {
+                min-width: 800px;
+            }
         }
 
         .app-container {
