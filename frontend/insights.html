@@ -213,14 +213,29 @@
                 const editingMemoContent = ref('');
                 const savingMemo = ref(false);
 
-                const getDateStr = (timeStr) => {
-                    if (!timeStr) return '';
-                    return timeStr.split('T')[0].replace(/\//g, '-');
+                const getLocalDateStr = (date) => {
+                    if (!date) return '';
+                    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
                 };
 
-                const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
-                const weekStartStr = (() => { const d = new Date(); const day = d.getDay(); const diff = d.getDate() - day + (day === 0 ? -6 : 1); d.setDate(diff); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
-                const monthStartStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; })();
+                const getDateStr = (timeStr) => {
+                    if (!timeStr) return '';
+                    const d = new Date(timeStr);
+                    return getLocalDateStr(d);
+                };
+
+                const todayStr = getLocalDateStr(new Date());
+                const weekStartStr = (() => { 
+                    const d = new Date(); 
+                    const day = d.getDay(); 
+                    const diff = d.getDate() - day + (day === 0 ? -6 : 1); 
+                    d.setDate(diff); 
+                    return getLocalDateStr(d);
+                })();
+                const monthStartStr = (() => { 
+                    const d = new Date(); 
+                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; 
+                })();
 
                 const categorizedItems = computed(() => {
                     const filtered = activeTab.value === 'all' ? allItems.value :
