@@ -14,13 +14,15 @@ import sys
 import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Set, Optional
+import glob
+import re
 
 # 强制刷新输出
 sys.stdout.reconfigure(line_buffering=True)
 
 # ========== 配置 ==========
-# 当前使用的方案: 1=iwencai, 2=tushare(备用)
-CURRENT_METHOD = 1
+# 当前使用的方案: 1=iwencai, 2=tushare(备用), 3=csv导入
+CURRENT_METHOD = 3
 
 # 测试模式：限制查询数量（用于测试）
 # 设置为 0 或 None 表示查询全部，设置为 100 表示只查询前100只缺失ROE的股票
@@ -502,13 +504,142 @@ async def tushare_batch_fetch_roe(
 """
 
 
+def get_latest_csv_file() -> Optional[str]:
+    """获取scripts目录下最新的ROE CSV文件"""
+    scripts_dir = os.path.dirname(os.path.abspath(__file__))
+    pattern = os.path.join(scripts_dir, "all_stocks_roe_*.csv")
+    csv_files = glob.glob(pattern)
+    
+    if not csv_files:
+        return None
+    
+    # 按文件名排序，取最新的
+    csv_files.sort(reverse=True)
+    return csv_files[0]
+
+
+def import_roe_from_csv(csv_file: str) -> tuple:
+    """
+    从CSV文件导入ROE数据到数据库
+    
+    CSV格式: 股票代码,发布日期,统计期,ROE(%),毛利率
+    CSV代码格式: 000972.XSHE, 688066.XSHG
+    数据库代码格式: sz000972, sh688066
+    
+    返回: (success_count, skipped_count, error_count)
+    """
+    import csv
+    
+    if not os.path.exists(csv_file):
+        print(f"  错误: 文件不存在 {csv_file}")
+        return 0, 0, 0
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    success_count = 0
+    skipped_count = 0
+    error_count = 0
+    
+    # 获取已有ROE数据
+    existing_roe = get_existing_roe_data()
+    
+    def convert_code(code: str) -> str:
+        """转换代码格式: 000972.XSHE -> sz000972, 688066.XSHG -> sh688066"""
+        if '.XSHE' in code:
+            return 'sz' + code.replace('.XSHE', '')
+        elif '.XSHG' in code:
+            return 'sh' + code.replace('.XSHG', '')
+        return code
+    
+    with open(csv_file, 'r', encoding='utf-8-sig') as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    
+    total = len(rows)
+    print(f"  CSV文件: {csv_file}")
+    print(f"  总记录数: {total}")
+    
+    # 处理列名中的BOM
+    if rows and '\ufeff股票代码' in rows[0]:
+        for row in rows:
+            if '\ufeff股票代码' in row:
+                row['股票代码'] = row.pop('\ufeff股票代码')
+            if '\ufeff发布日期' in row:
+                row['发布日期'] = row.pop('\ufeff发布日期')
+            if '\ufeff统计期' in row:
+                row['统计期'] = row.pop('\ufeff统计期')
+            if '\ufeffROE(%)' in row:
+                row['ROE(%)'] = row.pop('\ufeffROE(%)')
+            if '\ufeff毛利率' in row:
+                row['毛利率'] = row.pop('\ufeff毛利率')
+    
+    for row in rows:
+        try:
+            raw_code = row['股票代码'].strip()
+            code = convert_code(raw_code)
+            date = row['统计期'].strip().replace('-', '')  # 2025-12-31 -> 20251231
+            roe_val = float(row['ROE(%)'])
+            
+            # 检查是否是年末数据（12-31结尾）
+            if not date.endswith('1231'):
+                continue
+            
+            # 增量更新：检查是否已存在
+            existing_dates = existing_roe.get(code, set())
+            if date in existing_dates:
+                skipped_count += 1
+                continue
+            
+            # 保存到数据库
+            cursor.execute('''
+                INSERT OR REPLACE INTO roe_data (code, date, roe)
+                VALUES (?, ?, ?)
+            ''', (code, date, roe_val))
+            success_count += 1
+            
+        except Exception as e:
+            error_count += 1
+            if error_count <= 5:
+                print(f"  错误: {row}: {e}")
+    
+    conn.commit()
+    conn.close()
+    
+    return success_count, skipped_count, error_count
+
+
+def import_roe_from_csv_auto() -> tuple:
+    """自动从scripts目录下的最新CSV文件导入ROE数据"""
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 从CSV导入ROE数据...")
+    
+    csv_file = get_latest_csv_file()
+    if not csv_file:
+        print("  错误: 未找到ROE CSV文件")
+        return 0, 0, 1
+    
+    return import_roe_from_csv(csv_file)
+
+
 def main():
     """主函数"""
     print(f"\n{'='*60}")
     print(f"ROE数据更新脚本")
-    print(f"当前方案: {'iwencai' if CURRENT_METHOD == 1 else 'Tushare (备用)'}")
+    methods = {1: 'iwencai', 2: 'Tushare (备用)', 3: 'CSV导入'}
+    print(f"当前方案: {methods.get(CURRENT_METHOD, '未知')}")
     print(f"年份范围: {START_YEAR}-{END_YEAR}")
     print(f"{'='*60}\n")
+
+    if CURRENT_METHOD == 3:
+        # CSV导入模式
+        success, skipped, failed = import_roe_from_csv_auto()
+        print(f"\n{'='*60}")
+        print(f"导入完成")
+        print(f"  成功导入: {success}")
+        print(f"  已是最新: {skipped}")
+        print(f"  失败: {failed}")
+        print(f"{'='*60}\n")
+        return
 
     if CURRENT_METHOD == 1 and not IWENCAI_AVAILABLE:
         print("错误: iwencai 不可用，请安装 pywencai 或切换到备用方案")
