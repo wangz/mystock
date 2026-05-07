@@ -1449,10 +1449,10 @@
                                     <span v-if="stock.price === null">--</span>
                                     <span v-else :style="Math.abs(stock.change_percent) >= 3 ? 'font-weight: 700;' : 'font-weight: 400;'">{{ stock.change_percent >= 0 ? '+' : '' }}{{ stock.change_percent.toFixed(2) }}%</span>
                                     <div class="action-buttons">
-                                        <button class="action-btn" @click="moveTop('portfolio', index)" :disabled="index === 0" title="置顶">⤒</button>
-                                        <button class="action-btn" @click="moveUp('portfolio', index)" :disabled="index === 0" title="上移">⇧</button>
-                                        <button class="action-btn" @click="moveDown('portfolio', index)" :disabled="index === portfolio.length - 1" title="下移">⇩</button>
-                                        <button class="action-btn action-btn-delete" @click="deleteStock('portfolio', index)" title="删除">×</button>
+                                        <button class="action-btn" @click="moveTop('portfolio', stock)" :disabled="index === 0" title="置顶">⤒</button>
+                                        <button class="action-btn" @click="moveUp('portfolio', stock)" :disabled="index === 0" title="上移">⇧</button>
+                                        <button class="action-btn" @click="moveDown('portfolio', stock)" :disabled="index === portfolio.length - 1" title="下移">⇩</button>
+                                        <button class="action-btn action-btn-delete" @click="deleteStock('portfolio', stock)" title="删除">×</button>
                                         <button class="action-btn action-btn-memo" @click="openMemo('portfolio', index)" title="备忘">{{ stock.memo ? '📝' : '📄' }}</button>
                                     </div>
                                 </td>
@@ -1525,11 +1525,11 @@
                                     <span v-if="stock.price === null">--</span>
                                     <span v-else :style="Math.abs(stock.change_percent) >= 3 ? 'font-weight: 700;' : 'font-weight: 400;'">{{ stock.change_percent >= 0 ? '+' : '' }}{{ stock.change_percent.toFixed(2) }}%</span>
                                     <div class="action-buttons">
-                                        <button class="action-btn" @click="moveTop('watchlist', index)" :disabled="index === 0" title="置顶">⤒</button>
-                                        <button class="action-btn" @click="moveUp('watchlist', index)" :disabled="index === 0" title="上移">⇧</button>
-                                        <button class="action-btn" @click="moveDown('watchlist', index)" :disabled="index === filteredWatchlist.length - 1" title="下移">⇩</button>
+                                        <button class="action-btn" @click="moveTop('watchlist', stock)" :disabled="index === 0" title="置顶">⤒</button>
+                                        <button class="action-btn" @click="moveUp('watchlist', stock)" :disabled="index === 0" title="上移">⇧</button>
+                                        <button class="action-btn" @click="moveDown('watchlist', stock)" :disabled="index === filteredWatchlist.length - 1" title="下移">⇩</button>
                                         <button class="action-btn" @click="openStockTags(stock)" title="标签" v-if="auth.isLoggedIn">🏷️</button>
-                                        <button class="action-btn action-btn-delete" @click="deleteStock('watchlist', index)" title="删除">×</button>
+                                        <button class="action-btn action-btn-delete" @click="deleteStock('watchlist', stock)" title="删除">×</button>
                                         <button class="action-btn action-btn-memo" @click="openMemoByCode('watchlist', stock.code)" title="备忘">{{ stock.memo ? '📝' : '📄' }}</button>
                                     </div>
                                 </td>
@@ -2822,9 +2822,12 @@
                 const addStockSearch = ref('');
                 const addStockResults = ref([]);
                 const addStockLoading = ref(false);
+                const addStockTargetTag = ref(null);  // 记录目标标签
                 const selectedStock = ref(null);
                 const addStockTitle = computed(() => {
-                    return addStockTarget.value === 'portfolio' ? '➕ 添加到持仓' : '➕ 添加到观察';
+                    const tag = addStockTargetTag.value;
+                    const base = addStockTarget.value === 'portfolio' ? '➕ 添加到持仓' : '➕ 添加到观察';
+                    return tag ? `➕ 添加到「${tag}」` : base;
                 });
 
                 // 股票详情弹窗
@@ -2885,27 +2888,98 @@
                 });
 
                 // 排序功能
-                const moveUp = async (listName, index) => {
-                    if (index > 0) {
-                        const list = listName === 'portfolio' ? portfolio : watchlist;
-                        const temp = list.value[index];
-                        list.value[index] = list.value[index - 1];
-                        list.value[index - 1] = temp;
-                        await saveStockOrder(listName, list.value);
-                    }
-                };
-
-                const moveDown = async (listName, index) => {
+                const moveUp = async (listName, stock) => {
                     const list = listName === 'portfolio' ? portfolio : watchlist;
-                    if (index < list.value.length - 1) {
-                        const temp = list.value[index];
-                        list.value[index] = list.value[index + 1];
-                        list.value[index + 1] = temp;
-                        await saveStockOrder(listName, list.value);
+                    
+                    // 如果是观察列表且有筛选标签，在筛选范围内移动
+                    if (listName === 'watchlist' && selectedTag.value) {
+                        const filtered = filteredWatchlist.value;
+                        const filteredIndex = filtered.findIndex(s => s.code === stock.code);
+                        if (filteredIndex > 0) {
+                            // 获取筛选后列表中相邻的股票
+                            const prevStock = filtered[filteredIndex - 1];
+                            // 在原始列表中找到它们的实际位置
+                            const actualIndex = list.value.findIndex(s => s.code === stock.code);
+                            const prevIndex = list.value.findIndex(s => s.code === prevStock.code);
+                            // 交换位置
+                            const temp = list.value[actualIndex];
+                            list.value[actualIndex] = list.value[prevIndex];
+                            list.value[prevIndex] = temp;
+                            await saveStockOrder(listName, list.value);
+                        }
+                    } else {
+                        // 普通模式：在原始列表中移动
+                        const actualIndex = list.value.findIndex(s => s.code === stock.code);
+                        if (actualIndex > 0) {
+                            const temp = list.value[actualIndex];
+                            list.value[actualIndex] = list.value[actualIndex - 1];
+                            list.value[actualIndex - 1] = temp;
+                            await saveStockOrder(listName, list.value);
+                        }
                     }
                 };
 
-                const deleteStock = async (listName, index) => {
+                const moveDown = async (listName, stock) => {
+                    const list = listName === 'portfolio' ? portfolio : watchlist;
+                    
+                    // 如果是观察列表且有筛选标签，在筛选范围内移动
+                    if (listName === 'watchlist' && selectedTag.value) {
+                        const filtered = filteredWatchlist.value;
+                        const filteredIndex = filtered.findIndex(s => s.code === stock.code);
+                        if (filteredIndex !== -1 && filteredIndex < filtered.length - 1) {
+                            // 获取筛选后列表中相邻的股票
+                            const nextStock = filtered[filteredIndex + 1];
+                            // 在原始列表中找到它们的实际位置
+                            const actualIndex = list.value.findIndex(s => s.code === stock.code);
+                            const nextIndex = list.value.findIndex(s => s.code === nextStock.code);
+                            // 交换位置
+                            const temp = list.value[actualIndex];
+                            list.value[actualIndex] = list.value[nextIndex];
+                            list.value[nextIndex] = temp;
+                            await saveStockOrder(listName, list.value);
+                        }
+                    } else {
+                        // 普通模式：在原始列表中移动
+                        const actualIndex = list.value.findIndex(s => s.code === stock.code);
+                        if (actualIndex !== -1 && actualIndex < list.value.length - 1) {
+                            const temp = list.value[actualIndex];
+                            list.value[actualIndex] = list.value[actualIndex + 1];
+                            list.value[actualIndex + 1] = temp;
+                            await saveStockOrder(listName, list.value);
+                        }
+                    }
+                };
+
+                const moveTop = async (listName, stock) => {
+                    const list = listName === 'portfolio' ? portfolio : watchlist;
+                    
+                    // 如果是观察列表且有筛选标签，移到筛选后列表的顶部（即第一个符合标签的位置）
+                    if (listName === 'watchlist' && selectedTag.value) {
+                        const filtered = filteredWatchlist.value;
+                        const filteredIndex = filtered.findIndex(s => s.code === stock.code);
+                        if (filteredIndex > 0) {
+                            // 获取筛选后列表中第一个股票
+                            const firstStock = filtered[0];
+                            // 在原始列表中找到它们的实际位置
+                            const actualIndex = list.value.findIndex(s => s.code === stock.code);
+                            const firstIndex = list.value.findIndex(s => s.code === firstStock.code);
+                            // 从当前位置移除并插入到第一个位置
+                            const item = list.value.splice(actualIndex, 1)[0];
+                            list.value.splice(firstIndex, 0, item);
+                            await saveStockOrder(listName, list.value);
+                        }
+                    } else {
+                        // 普通模式：移到原始列表顶部
+                        const actualIndex = list.value.findIndex(s => s.code === stock.code);
+                        if (actualIndex > 0) {
+                            const item = list.value.splice(actualIndex, 1)[0];
+                            list.value.unshift(item);
+                            await saveStockOrder(listName, list.value);
+                        }
+                    }
+                };
+
+                const deleteStock = async (listName, stock) => {
                     if (!auth.value.isLoggedIn) {
                         ElMessage.warning('请先登录');
                         showLoginDialog.value = true;
@@ -2914,11 +2988,6 @@
                     if (!confirm('确定要删除这只股票吗？')) return;
 
                     const list = listName === 'portfolio' ? portfolio : watchlist;
-                    const filteredList = listName === 'watchlist' ? filteredWatchlist : null;
-
-                    // 获取要删除的股票（通过 filteredWatchlist 或直接通过 index）
-                    const stock = filteredList ? filteredList.value[index] : list.value[index];
-                    if (!stock) return;
 
                     // 在原始列表中找到该股票的实际索引
                     const actualIndex = list.value.findIndex(s => s.code === stock.code);
@@ -2944,15 +3013,6 @@
                             console.error('删除股票失败:', error);
                             alert('删除失败，请重试');
                         }
-                    }
-                };
-
-                const moveTop = async (listName, index) => {
-                    if (index > 0) {
-                        const list = listName === 'portfolio' ? portfolio : watchlist;
-                        const stock = list.value.splice(index, 1)[0];
-                        list.value.unshift(stock);
-                        await saveStockOrder(listName, list.value);
                     }
                 };
 
@@ -4028,6 +4088,14 @@
                         return;
                     }
                     addStockTarget.value = target;
+                    
+                    // 如果观察仓有选中标签，记录目标标签
+                    if (target === 'watchlist' && selectedTag.value) {
+                        addStockTargetTag.value = selectedTag.value;
+                    } else {
+                        addStockTargetTag.value = null;
+                    }
+                    
                     addStockSearch.value = '';
                     addStockResults.value = [];
                     selectedStock.value = null;
@@ -4149,6 +4217,7 @@
 
                     const stock = selectedStock.value;
                     const target = addStockTarget.value;
+                    const tag = addStockTargetTag.value;  // 目标标签
                     const list = target === 'portfolio' ? portfolio : watchlist;
 
                     // 检查是否已存在
@@ -4164,11 +4233,13 @@
                             body: JSON.stringify({
                                 name: stock.name,
                                 code: stock.code,
-                                target: target
+                                target: target,
+                                tag: tag
                             })
                         });
 
-                        list.value.push({
+                        // 添加股票到列表，包含标签信息
+                        const newStock = {
                             ticker: stock.name,
                             code: stock.code,
                             name: stock.name,
@@ -4176,8 +4247,9 @@
                             previous_close: null,
                             change: null,
                             change_percent: null,
-                            tags: []  // 添加空的标签数组
-                        });
+                            tags: tag ? [tag] : []
+                        };
+                        list.value.push(newStock);
 
                         showAddStockModal.value = false;
                         selectedStock.value = null;
@@ -4199,7 +4271,10 @@
                             })
                         });
 
-                        ElMessage.success('已添加到' + (target === 'portfolio' ? '持仓' : '关注') + '列表');
+                        ElMessage.success(tag ? `已添加到「${tag}」` : `已添加到${target === 'portfolio' ? '持仓' : '关注'}列表`);
+                        
+                        // 重置目标标签
+                        addStockTargetTag.value = null;
                     } catch (error) {
                         console.error('添加股票失败:', error);
                         alert('添加失败，请重试');
@@ -4586,6 +4661,7 @@
                     allMemos,
                     showAddStockModal,
                     addStockTarget,
+                    addStockTargetTag,
                     addStockSearch,
                     addStockResults,
                     addStockLoading,

@@ -1184,6 +1184,7 @@ def add_stock(stock_data: dict, current_user: dict = Depends(get_current_user)):
     
     code = stock_data.get('code')
     target = stock_data.get('target')
+    tag = stock_data.get('tag')  # 新增：指定标签
     
     # 获取当前用户数据
     if target == 'portfolio':
@@ -1223,7 +1224,9 @@ def add_stock(stock_data: dict, current_user: dict = Depends(get_current_user)):
                 break
         
         if not code_exists:
-            watchlist.append({'code': code, 'tags': []})
+            # 如果指定了标签，添加到该标签
+            tags = [tag] if tag else []
+            watchlist.append({'code': code, 'tags': tags})
             cursor.execute('''
                 INSERT OR REPLACE INTO user_data (user_id, data_type, data_key, json_value, updated_at)
                 VALUES (?, 'watchlist', '', ?, ?)
