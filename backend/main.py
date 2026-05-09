@@ -232,64 +232,71 @@ def get_stock_data(ticker: str, code: str) -> Optional[dict]:
         return None
 
 
-def get_stocks_data_batch(stocks: list) -> dict:
+def get_stocks_data_batch(stocks: list, batch_size: int = 100) -> dict:
     """
-    批量获取股票数据（一次性请求）
-    stocks: [{'name': '贵州茅台', 'code': 'sh600519'}, ...]
-    返回: {'sh600519': {...}, 'sz000858': {...}, ...}
+    批量获取股票数据（支持分批请求，避免URL过长）
+    
+    Args:
+        stocks: [{'name': '贵州茅台', 'code': 'sh600519'}, ...]
+        batch_size: 每批请求的股票数量（默认100）
+    
+    Returns:
+        {'sh600519': {...}, 'sz000858': {...}, ...}
     """
     if not stocks:
         return {}
 
     codes = [s['code'] for s in stocks]
     name_map = {s['code']: s['name'] for s in stocks}
-
-    try:
-        url = f"https://qt.gtimg.cn/q={','.join(codes)}"
-        response = requests.get(url, timeout=5)
-
-        result = {}
-        if response.status_code == 200 and response.content:
-            try:
-                data = response.content.decode('gbk', errors='ignore')
-            except:
-                data = response.text
-
-            for line in data.strip().split(';'):
-                line = line.strip()  # 去掉前后空白
-                if not line or '=' not in line:
-                    continue
-
+    
+    result = {}
+    
+    # 分批处理
+    for i in range(0, len(codes), batch_size):
+        batch_codes = codes[i:i + batch_size]
+        url = f"https://qt.gtimg.cn/q={','.join(batch_codes)}"
+        
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200 and response.content:
                 try:
-                    # 从 v_sh600519 提取代码
-                    code_part = line.split('="')[0].replace('v_', '')
-                    parts = line.split('="')[1].rstrip('";')
-                    fields = parts.split('~')
+                    data = response.content.decode('gbk', errors='ignore')
+                except:
+                    data = response.text
 
-                    if len(fields) > 32:
-                        # 使用 code_part（如 sh600519）而不是 fields[2]（600519）
-                        code = code_part
-                        current_price = float(fields[3])
-                        previous_close = float(fields[4])
-                        change = float(fields[31])
-                        change_percent = float(fields[32])
+                for line in data.strip().split(';'):
+                    line = line.strip()
+                    if not line or '=' not in line:
+                        continue
 
-                        if current_price > 0:
-                            result[code] = {
-                                'ticker': name_map.get(code, code),
-                                'code': code,
-                                'name': fields[1],
-                                'price': current_price,
-                                'previous_close': previous_close,
-                                'change': change,
-                                'change_percent': change_percent
-                            }
-                except (IndexError, ValueError) as e:
-                    continue
+                    try:
+                        code_part = line.split('="')[0].replace('v_', '')
+                        parts = line.split('="')[1].rstrip('";')
+                        fields = parts.split('~')
 
-        return result
-    except Exception as e:
-        return {}
+                        if len(fields) > 32:
+                            code = code_part
+                            current_price = float(fields[3])
+                            previous_close = float(fields[4])
+                            change = float(fields[31])
+                            change_percent = float(fields[32])
+
+                            if current_price > 0:
+                                result[code] = {
+                                    'ticker': name_map.get(code, code),
+                                    'code': code,
+                                    'name': fields[1],
+                                    'price': current_price,
+                                    'previous_close': previous_close,
+                                    'change': change,
+                                    'change_percent': change_percent
+                                }
+                    except (IndexError, ValueError):
+                        continue
+        except Exception:
+            continue
+    
+    return result
 
 # API 路由
 @app.get("/")
@@ -2224,17 +2231,47 @@ def get_watchlist_with_prices(watchlist_data, user_id=None):
     }
 
 @app.get("/api/portfolio")
-def get_portfolio(current_user: Optional[dict] = Depends(get_optional_user)):
-    """获取持仓列表（支持登录和未登录状态）"""
+def get_portfolio(current_user: Optional[dict] = Depends(get_optional_user), codes: Optional[str] = None):
+    """获取持仓列表（支持登录和未登录状态）
+    
+    Args:
+        codes: 可选，用逗号分隔的股票代码列表，用于只查询指定股票的价格
+    """
     user_id = current_user['user_id'] if current_user else DEFAULT_USER_ID
     portfolio_codes = get_user_stock_list(user_id, 'portfolio')
+    
+    # 如果传入了 codes 参数，只返回这些股票
+    if codes:
+        selected_codes = codes.split(',')
+        # 筛选出真正在持仓中的股票
+        portfolio_codes = [
+            item for item in portfolio_codes 
+            if (isinstance(item, dict) and item.get('code') in selected_codes) 
+            or (isinstance(item, str) and item in selected_codes)
+        ]
+    
     return get_portfolio_with_prices(portfolio_codes, user_id)
 
 @app.get("/api/watchlist")
-def get_watchlist(current_user: Optional[dict] = Depends(get_optional_user)):
-    """获取观察列表（支持登录和未登录状态）"""
+def get_watchlist(current_user: Optional[dict] = Depends(get_optional_user), codes: Optional[str] = None):
+    """获取观察列表（支持登录和未登录状态）
+    
+    Args:
+        codes: 可选，用逗号分隔的股票代码列表，用于只查询指定股票的价格
+    """
     user_id = current_user['user_id'] if current_user else DEFAULT_USER_ID
     watchlist_codes = get_user_stock_list(user_id, 'watchlist')
+    
+    # 如果传入了 codes 参数，只返回这些股票
+    if codes:
+        selected_codes = codes.split(',')
+        # 筛选出真正在观察列表中的股票
+        watchlist_codes = [
+            item for item in watchlist_codes 
+            if (isinstance(item, dict) and item.get('code') in selected_codes) 
+            or (isinstance(item, str) and item in selected_codes)
+        ]
+    
     return get_watchlist_with_prices(watchlist_codes, user_id)
 
 # 挂载静态文件目录

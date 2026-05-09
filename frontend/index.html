@@ -3298,22 +3298,36 @@
                         second: '2-digit'
                     });
 
+                    // 构造查询参数：如果选择了标签，只查询持仓和筛选后的观察仓股票
+                    let portfolioQuery = '';
+                    let watchlistQuery = '';
+                    
+                    if (selectedTag.value) {
+                        // 获取所有持仓的股票代码
+                        const portfolioCodes = portfolio.value.map(stock => stock.code).join(',');
+                        portfolioQuery = portfolioCodes ? `?codes=${portfolioCodes}` : '';
+                        
+                        // 获取筛选后的观察仓股票代码
+                        const filteredWatchlistCodes = (filteredWatchlist.value || []).map(stock => stock.code).join(',');
+                        watchlistQuery = filteredWatchlistCodes ? `?codes=${filteredWatchlistCodes}` : '';
+                    }
+
                     // 根据登录状态选择 API
                     let portfolioRes, watchlistRes;
                     
                     if (auth.value.isLoggedIn && auth.value.token) {
                         // 已登录：调用需要认证的 API
                         const [p, w] = await Promise.all([
-                            authFetch(`${API_BASE}/api/portfolio`),
-                            authFetch(`${API_BASE}/api/watchlist`)
+                            authFetch(`${API_BASE}/api/portfolio${portfolioQuery}`),
+                            authFetch(`${API_BASE}/api/watchlist${watchlistQuery}`)
                         ]);
                         portfolioRes = p;
                         watchlistRes = w;
                     } else {
                         // 未登录：调用公开 API
                         const [p, w] = await Promise.all([
-                            fetchJson(`${API_BASE}/api/portfolio`),
-                            fetchJson(`${API_BASE}/api/watchlist`)
+                            fetchJson(`${API_BASE}/api/portfolio${portfolioQuery}`),
+                            fetchJson(`${API_BASE}/api/watchlist${watchlistQuery}`)
                         ]);
                         portfolioRes = p;
                         watchlistRes = w;
@@ -3323,13 +3337,13 @@
                     const newPortfolio = portfolioRes.portfolio || [];
                     const newWatchlist = watchlistRes.watchlist || [];
 
-                    // 更新持仓，保留原有 memo
+                    // 更新持仓，保留原有 memo（注意：如果筛选了，只更新返回的股票）
                     portfolio.value = portfolio.value.map(stock => {
                         const updated = newPortfolio.find(s => s.code === stock.code);
                         return updated ? { ...stock, ...updated } : stock;
                     });
 
-                    // 更新观察列表
+                    // 更新观察列表（注意：如果筛选了，只更新返回的股票）
                     watchlist.value = watchlist.value.map(stock => {
                         const updated = newWatchlist.find(s => s.code === stock.code);
                         return updated ? { ...stock, ...updated } : stock;
