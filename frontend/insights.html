@@ -108,8 +108,8 @@
 
         <div v-else class="trello-container">
             <div class="trello-column column-today">
-                <div class="column-header"><span>📅 今天</span><span class="column-count">{{ todayItems.length }}</span></div>
-                <div v-if="todayItems.length === 0" class="empty-column">暂无今日记录</div>
+                <div class="column-header"><span>📅 近三日</span><span class="column-count">{{ todayItems.length }}</span></div>
+                <div v-if="todayItems.length === 0" class="empty-column">暂无近三日记录</div>
                 <div v-else>
                     <div v-for="item in todayItems" :key="item.id" class="insight-card" :class="item.type === 'insight' ? 'type-insight' : 'type-memo'" @click="item.type === 'memo' && openEditMemo(item)">
                         <div class="card-header">
@@ -225,6 +225,11 @@
                 };
 
                 const todayStr = getLocalDateStr(new Date());
+                const threeDaysAgoStr = (() => {
+                    const d = new Date();
+                    d.setDate(d.getDate() - 2);  // 减去2天，包含今天、昨天、前天
+                    return getLocalDateStr(d);
+                })();
                 const weekStartStr = (() => { 
                     const d = new Date(); 
                     const day = d.getDay(); 
@@ -245,7 +250,7 @@
                     filtered.forEach(item => {
                         const date = getDateStr(item.updated_at);
                         if (!date) { earlier.push(item); }
-                        else if (date === todayStr) { today.push(item); }
+                        else if (date >= threeDaysAgoStr && date <= todayStr) { today.push(item); }
                         else if (date >= weekStartStr) { week.push(item); }
                         else if (date >= monthStartStr) { month.push(item); }
                         else { earlier.push(item); }
