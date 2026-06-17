@@ -11,6 +11,8 @@ import requests
 import httpx
 import asyncio
 import akshare as ak
+import threading
+import time
 
 from simple_limit_up import SimpleLimitUpAnalyzer
 from baostock_fetcher import batch_get_prices, get_stock_price
@@ -134,10 +136,33 @@ def clean_expired_cache():
         conn = sqlite3.connect(CACHE_DB)
         cursor = conn.cursor()
         cursor.execute('DELETE FROM cache WHERE expire_at < ?', (datetime.now(),))
+        deleted = cursor.rowcount
         conn.commit()
         conn.close()
+        if deleted > 0:
+            logger.info(f"清理过期缓存完成，共删除 {deleted} 条记录")
     except Exception as e:
+        logger.error(f"清理过期缓存失败: {e}")
         pass
+
+def schedule_cache_cleanup(interval_minutes: int = 60):
+    """
+    定时清理过期缓存（后台线程）
+    
+    Args:
+        interval_minutes: 清理间隔（分钟），默认每小时清理一次
+    """
+    def cleanup_loop():
+        while True:
+            logger.debug(f"定时缓存清理任务启动，间隔 {interval_minutes} 分钟")
+            clean_expired_cache()
+            time.sleep(interval_minutes * 60)
+    
+    # 创建后台线程，设置为守护线程（服务关闭时自动退出）
+    thread = threading.Thread(target=cleanup_loop, daemon=True)
+    thread.name = "CacheCleanupThread"
+    thread.start()
+    logger.info(f"定时缓存清理任务已启动，每 {interval_minutes} 分钟执行一次")
 
 def load_stock_codes():
     """加载股票代码信息"""
@@ -1998,6 +2023,9 @@ async def startup_event():
     
     clean_expired_cache()
     logger.info("过期缓存清理完成")
+    
+    # 启动定时缓存清理任务（每小时执行一次）
+    schedule_cache_cleanup(60)
     
     logger.info("✅ MyStock 服务启动成功！")
 
