@@ -1,20 +1,28 @@
 #!/usr/bin/env python3
 """
 股票数据统一同步脚本
-自动同步 A股、港股、ETF 到 stock_codes.json
+自动同步 A股、港股、ETF 到 stock_codes.json 和 finance_data.db
 
 使用方法：
-    python sync_all_stocks.py              # 同步所有
-    python sync_all_stocks.py --a-share    # 只同步A股
-    python sync_all_stocks.py --hk         # 只同步港股
-    python sync_all_stocks.py --etf       # 只同步ETF
+    python sync_all_stocks.py                  # 同步所有
+    python sync_all_stocks.py --a-share       # 只同步A股
+    python sync_all_stocks.py --hk            # 只同步港股
+    python sync_all_stocks.py --etf           # 只同步ETF
+    python sync_all_stocks.py --no-db         # 不同步数据库，只更新JSON
+    python sync_all_stocks.py --clear-db      # 清空数据库后全量同步
 """
 
 import json
 import os
+import sys
 import time
+import sqlite3
 import requests
 import argparse
+
+# 设置stdout编码
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
 
 def load_portfolio_data():
     """加载portfolio_data.json"""
@@ -31,11 +39,14 @@ def save_portfolio_data(data):
 def sync_a_stocks():
     """同步A股（使用AKShare）"""
     print("\n" + "="*60)
-    print("📥 同步 A股（沪深京）...")
+    print(">> 同步 A股（沪深京）...")
     print("="*60)
 
     try:
-        import akshare_proxy_patch
+        try:
+            import akshare_proxy_patch
+        except ImportError:
+            pass
         import akshare as ak
 
         stock_info = ak.stock_info_a_code_name()
@@ -70,17 +81,17 @@ def sync_a_stocks():
                 if ' ' in name:
                     stock_codes[full_code]['aliases'].append(name.replace(' ', ''))
 
-        print(f"   ✓ A股同步完成: {len(stock_codes)} 条")
+        print(f"   [OK] A股同步完成: {len(stock_codes)} 条")
         return stock_codes
 
     except Exception as e:
-        print(f"   ✗ A股同步失败: {e}")
+        print(f"   [FAIL] A股同步失败: {e}")
         return {}
 
 def sync_hk_stocks():
     """同步港股（使用腾讯API轮询）"""
     print("\n" + "="*60)
-    print("📥 同步 港股...")
+    print(">> 同步 港股...")
     print("="*60)
 
     stock_codes = {}
@@ -133,13 +144,13 @@ def sync_hk_stocks():
         if i % 100 == 0:
             time.sleep(0.05)
 
-    print(f"   ✓ 港股同步完成: {total} 只")
+    print(f"   [OK] 港股同步完成: {total} 只")
     return stock_codes
 
 def sync_etf():
     """同步ETF基金"""
     print("\n" + "="*60)
-    print("📥 同步 ETF基金...")
+    print(">> 同步 ETF基金...")
     print("="*60)
 
     try:
@@ -173,14 +184,74 @@ def sync_etf():
                     'aliases': []
                 }
 
-        print(f"   ✓ ETF同步完成: {len(etf_codes)} 条")
+        print(f"   [OK] ETF同步完成: {len(etf_codes)} 条")
         return etf_codes
 
     except Exception as e:
-        print(f"   ✗ ETF同步失败: {e}")
+        print(f"   [FAIL] ETF同步失败: {e}")
         return {}
 
-def sync_all(a_share=True, hk=True, etf=False):
+def update_database(all_codes, clear=False):
+    """更新数据库 stock_codes 表"""
+    db_path = os.path.join(os.path.dirname(__file__), '..', 'finance_data.db')
+    print("\n" + "="*60)
+    print(">> 更新数据库 stock_codes 表...")
+    print("="*60)
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    if clear:
+        cursor.execute("DELETE FROM stock_codes")
+        print(f"   已清空 stock_codes 表")
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_codes (
+            code TEXT PRIMARY KEY,
+            name TEXT,
+            aliases TEXT,
+            pinyin TEXT
+        )
+    """)
+
+    inserted = 0
+    updated = 0
+
+    for code, info in all_codes.items():
+        name = info.get('name', '')
+        aliases = json.dumps(info.get('aliases', []), ensure_ascii=False)
+        pinyin = info.get('pinyin', '')
+
+        cursor.execute("SELECT code FROM stock_codes WHERE code = ?", (code,))
+        exists = cursor.fetchone()
+
+        if exists:
+            cursor.execute("""
+                UPDATE stock_codes SET name = ?, aliases = ?, pinyin = ?
+                WHERE code = ?
+            """, (name, aliases, pinyin, code))
+            updated += 1
+        else:
+            cursor.execute("""
+                INSERT INTO stock_codes (code, name, aliases, pinyin)
+                VALUES (?, ?, ?, ?)
+            """, (code, name, aliases, pinyin))
+            inserted += 1
+
+    conn.commit()
+
+    cursor.execute("SELECT COUNT(*) FROM stock_codes")
+    total = cursor.fetchone()[0]
+
+    conn.close()
+
+    print(f"   新增: {inserted} 条")
+    print(f"   更新: {updated} 条")
+    print(f"   总计: {total} 条")
+    print(f"   [OK] 数据库更新完成")
+
+
+def sync_all(a_share=True, hk=True, etf=False, update_db=True, clear_db=False):
     """同步股票数据"""
     print("="*60)
     print("股票数据统一同步工具")
@@ -217,9 +288,9 @@ def sync_all(a_share=True, hk=True, etf=False):
         all_codes.update(etf_codes)
         result_count['etf'] = len(etf_codes)
 
-    # 保存
+    # 保存JSON
     print("\n" + "="*60)
-    print("📊 同步完成！")
+    print(">> 同步完成!")
     print("="*60)
     if a_share:
         print(f"   A股: +{result_count['a']} 条")
@@ -233,14 +304,21 @@ def sync_all(a_share=True, hk=True, etf=False):
     with open(stock_codes_file, 'w', encoding='utf-8') as f:
         json.dump(all_codes, f, ensure_ascii=False, indent=4)
 
-    print(f"\n✅ 已保存到 stock_codes.json")
+    print(f"\n[OK] 已保存到 stock_codes.json")
+
+    # 更新数据库
+    if update_db:
+        update_database(all_codes, clear=clear_db)
+    else:
+        print(f"\n[SKIP] 跳过数据库更新 (--no-db)")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='股票数据同步工具')
     parser.add_argument('--a-share', action='store_true', help='只同步A股')
     parser.add_argument('--hk', action='store_true', help='只同步港股')
     parser.add_argument('--etf', action='store_true', help='只同步ETF')
-    parser.add_argument('--all', action='store_true', default=True, help='同步所有(默认)')
+    parser.add_argument('--no-db', action='store_true', help='不同步数据库，只更新JSON')
+    parser.add_argument('--clear-db', action='store_true', help='清空数据库后全量同步')
 
     args = parser.parse_args()
 
@@ -249,4 +327,4 @@ if __name__ == "__main__":
     hk = args.hk or (not args.a_share and not args.etf)
     etf = args.etf
 
-    sync_all(a_share=a_share, hk=hk, etf=etf)
+    sync_all(a_share=a_share, hk=hk, etf=etf, update_db=not args.no_db, clear_db=args.clear_db)

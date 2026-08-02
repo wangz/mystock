@@ -166,6 +166,52 @@ const API_BASE = 'http://localhost:8000';
 
 后端 API 在 `backend/main.py` 中，使用 FastAPI 框架构建。
 
+## 📦 数据管理
+
+### 股票代码同步
+
+使用 `backend/sync_all_stocks.py` 脚本可将最新的股票代码数据同步到 `stock_codes.json` 和 `finance_data.db` 数据库。
+
+```bash
+cd backend
+
+# 全量同步A股+ETF到数据库（清空后重建）
+python sync_all_stocks.py --a-share --etf --clear-db
+
+# 增量更新A股（日常使用）
+python sync_all_stocks.py --a-share
+
+# 同步港股（耗时较长，约10分钟）
+python sync_all_stocks.py --hk
+
+# 不同步数据库，只更新JSON文件
+python sync_all_stocks.py --a-share --no-db
+```
+
+**同步内容：**
+- A股（沪深京）：使用 AKShare 获取，约 5500 只
+- ETF基金：使用 AKShare 获取，约 1600 只
+- 港股：使用腾讯 API 轮询获取
+
+**参数说明：**
+| 参数 | 说明 |
+|------|------|
+| `--a-share` | 只同步A股 |
+| `--hk` | 只同步港股 |
+| `--etf` | 只同步ETF |
+| `--no-db` | 不同步数据库，只更新JSON |
+| `--clear-db` | 清空数据库后全量同步 |
+
+### 数据库表结构
+
+`finance_data.db` 包含以下核心表：
+
+| 表名 | 用途 | 行数 |
+|------|------|------|
+| `stock_codes` | 股票基础信息（代码、名称、别名） | 7147 |
+| `roe_data` | 历年ROE数据 | 57962 |
+| `stock_roe_summary` | ROE汇总指标（10年/5年平均等） | 5206 |
+
 ## 📄 License
 
 MIT License
