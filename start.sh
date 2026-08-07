@@ -33,13 +33,13 @@ if [ -d "backend" ]; then
 
     # 检查并升级 Python 依赖
     if [ -f "backend/requirements.txt" ]; then
-        echo -e "  ${YELLOW}升级 Python 依赖...${NC}"
+        echo -e "  ${YELLOW}检查 Python 依赖...${NC}"
 
         # 升级 pip
         pip3 install --upgrade pip -q 2>&1 | grep -v "Requirement already satisfied" || true
 
-        # 升级 requirements.txt 中的依赖
-        pip3 install --upgrade -r backend/requirements.txt -q 2>&1 | grep -v "Requirement already satisfied" || true
+        # 安装 requirements.txt 中的依赖（不强制升级，仅补齐/校正版本）
+        pip3 install -r backend/requirements.txt -q 2>&1 | grep -v "Requirement already satisfied" || true
 
         echo -e "${GREEN}  ✓${NC} Python 依赖已检查/升级"
     else

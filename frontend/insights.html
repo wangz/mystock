@@ -161,11 +161,30 @@
                 </div>
             </div>
 
-            <div class="trello-column column-earlier">
-                <div class="column-header"><span>📚 更早</span><span class="column-count">{{ earlierItems.length }}</span></div>
-                <div v-if="earlierItems.length === 0" class="empty-column">暂无更早记录</div>
+            <!-- 季度列（动态渲染，仅含有数据的季度） -->
+            <div v-for="q in earlierQuarters" :key="q.key" class="trello-column column-earlier">
+                <div class="column-header"><span>📚 {{ q.label }}</span><span class="column-count">{{ q.items.length }}</span></div>
+                <div v-if="q.items.length === 0" class="empty-column">暂无记录</div>
                 <div v-else>
-                    <div v-for="item in earlierItems" :key="item.id" class="insight-card" :class="item.type === 'insight' ? 'type-insight' : 'type-memo'" @click="item.type === 'memo' && openEditMemo(item)">
+                    <div v-for="item in q.items" :key="item.id" class="insight-card" :class="item.type === 'insight' ? 'type-insight' : 'type-memo'" @click="item.type === 'memo' && openEditMemo(item)">
+                        <div class="card-header">
+                            <div class="card-stock" v-if="item.type === 'memo'"><span class="stock-name">{{ item.name }}</span><span class="stock-code">{{ item.code }}</span></div>
+                            <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : 'tag-memo'">{{ item.type === 'insight' ? '💡 感悟' : (item.sources?.includes('portfolio') && item.sources?.includes('watchlist') ? '📈持仓+👁️观察' : (item.sources?.includes('portfolio') ? '📈 持仓' : '👁️ 观察')) }}</span>
+                        </div>
+                        <div class="card-content">{{ item.content }}</div>
+                        <div class="card-footer">
+                            <div class="card-time">{{ item.type === 'memo' && item.created_at ? '创建: ' + formatTime(item.created_at) + ' 更新: ' + formatTime(item.updated_at) : formatTime(item.updated_at) }}</div>
+                            <span v-if="item.type === 'memo'" class="delete-icon" @click.stop="confirmDeleteMemo(item)">🗑️</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 未知时间列（仅在有无日期条目时渲染） -->
+            <div v-if="unknownDateItems.length > 0" class="trello-column column-earlier">
+                <div class="column-header"><span>📚 未知时间</span><span class="column-count">{{ unknownDateItems.length }}</span></div>
+                <div>
+                    <div v-for="item in unknownDateItems" :key="item.id" class="insight-card" :class="item.type === 'insight' ? 'type-insight' : 'type-memo'" @click="item.type === 'memo' && openEditMemo(item)">
                         <div class="card-header">
                             <div class="card-stock" v-if="item.type === 'memo'"><span class="stock-name">{{ item.name }}</span><span class="stock-code">{{ item.code }}</span></div>
                             <span class="stock-tag" :class="item.type === 'insight' ? 'tag-insight' : 'tag-memo'">{{ item.type === 'insight' ? '💡 感悟' : (item.sources?.includes('portfolio') && item.sources?.includes('watchlist') ? '📈持仓+👁️观察' : (item.sources?.includes('portfolio') ? '📈 持仓' : '👁️ 观察')) }}</span>
@@ -246,22 +265,50 @@
                     const filtered = activeTab.value === 'all' ? allItems.value :
                                      activeTab.value === 'insight' ? allItems.value.filter(i => i.type === 'insight') :
                                      allItems.value.filter(i => i.type === 'memo');
-                    const today = [], week = [], month = [], earlier = [];
+                    const today = [], week = [], month = [];
+                    const quarterMap = new Map();   // key: "2025-Q4" -> { key, label, year, quarter, items: [] }
+                    const unknownDateItems = [];
                     filtered.forEach(item => {
-                        const date = getDateStr(item.updated_at);
-                        if (!date) { earlier.push(item); }
-                        else if (date >= threeDaysAgoStr && date <= todayStr) { today.push(item); }
-                        else if (date >= weekStartStr) { week.push(item); }
-                        else if (date >= monthStartStr) { month.push(item); }
-                        else { earlier.push(item); }
+                        const dateStr = getDateStr(item.updated_at);
+                        if (!dateStr) {
+                            unknownDateItems.push(item);
+                        } else if (dateStr >= threeDaysAgoStr && dateStr <= todayStr) {
+                            today.push(item);
+                        } else if (dateStr >= weekStartStr) {
+                            week.push(item);
+                        } else if (dateStr >= monthStartStr) {
+                            month.push(item);
+                        } else {
+                            // 更早：按季度归桶
+                            const d = new Date(item.updated_at);
+                            const year = d.getFullYear();
+                            const quarter = Math.floor(d.getMonth() / 3) + 1;
+                            const key = `${year}-Q${quarter}`;
+                            if (!quarterMap.has(key)) {
+                                quarterMap.set(key, {
+                                    key,
+                                    label: `${year}年 Q${quarter}`,
+                                    year,
+                                    quarter,
+                                    items: []
+                                });
+                            }
+                            quarterMap.get(key).items.push(item);
+                        }
                     });
-                    return { today, week, month, earlier };
+                    // 季度列按 年降序、季度降序 排序（最新季度在前）
+                    const earlierQuarters = Array.from(quarterMap.values()).sort((a, b) => {
+                        if (a.year !== b.year) return b.year - a.year;
+                        return b.quarter - a.quarter;
+                    });
+                    return { today, week, month, earlierQuarters, unknownDateItems };
                 });
 
                 const todayItems = computed(() => categorizedItems.value.today);
                 const weekItems = computed(() => categorizedItems.value.week);
                 const monthItems = computed(() => categorizedItems.value.month);
-                const earlierItems = computed(() => categorizedItems.value.earlier);
+                const earlierQuarters = computed(() => categorizedItems.value.earlierQuarters);
+                const unknownDateItems = computed(() => categorizedItems.value.unknownDateItems);
 
                 const formatTime = (timeStr) => {
                     if (!timeStr) return '';
@@ -347,7 +394,7 @@
 
                 onMounted(() => { loadData(); });
 
-                return { loading, activeTab, notLoggedIn, todayItems, weekItems, monthItems, earlierItems, formatTime, loadData, openEditMemo, saveMemo, confirmDeleteMemo, editMemoDialogVisible, editingMemo, editingMemoContent, savingMemo };
+                return { loading, activeTab, notLoggedIn, todayItems, weekItems, monthItems, earlierQuarters, unknownDateItems, formatTime, loadData, openEditMemo, saveMemo, confirmDeleteMemo, editMemoDialogVisible, editingMemo, editingMemoContent, savingMemo };
             }
         });
 
